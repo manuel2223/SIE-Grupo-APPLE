@@ -1,0 +1,123 @@
+import pandas as pd
+import random
+from fpdf import FPDF
+
+# Creamos una clase personalizada para el PDF para poder poner acentos sin que explote
+class PDF(FPDF):
+    def header(self):
+        self.set_font('Arial', 'B', 15)
+        self.cell(0, 10, 'EXAMEN DE CAPTACION - DIPUTACION DE CADIZ', 0, 1, 'C')
+        self.ln(5)
+
+def generar_examen_y_pdf(ruta_excel):
+    print("Leyendo el Excel de Google Forms...")
+    try:
+        df = pd.read_excel(ruta_excel)
+    except FileNotFoundError:
+        print(f"Error: No se encuentra el archivo {ruta_excel}.")
+        return
+
+    preguntas_validas = []
+
+    # Recorremos cada fila del Excel
+    for index, fila in df.iterrows():
+        
+        # Revisamos los 20 bloques posibles del formulario
+        for i in range(1, 21): 
+            # ¡AQUÍ ESTÁ LA CLAVE! Usamos los nombres EXACTOS de las nuevas columnas
+            col_enunciado = f'Enunciado de la Pregunta {i}'
+            
+            # Si la columna no existe en el Excel (porque alguien borró algo), saltamos
+            if col_enunciado not in fila:
+                continue
+                
+            enunciado = fila[col_enunciado]
+
+            # Si está vacío, pasamos de largo
+            if pd.isna(enunciado) or str(enunciado).strip() == "":
+                continue
+
+            # Extraemos las opciones
+            correcta = fila[f'Opción CORRECTA (Pregunta {i})']
+            inc1 = fila[f'Opción Falsa 1 (Pregunta {i})']
+            inc2 = fila[f'Opción Falsa 2 (Pregunta {i}) - Opcional']
+            inc3 = fila[f'Opción Falsa 3 (Pregunta {i}) - Opcional']
+
+            # Metemos la correcta y la falsa 1 (que son obligatorias)
+            opciones_mezclar = [
+                {'texto': correcta, 'es_correcta': True},
+                {'texto': inc1, 'es_correcta': False}
+            ]
+
+            # Si rellenaron la Falsa 2, la añadimos (aguanta Verdadero/Falso)
+            if pd.notna(inc2) and str(inc2).strip() != "":
+                opciones_mezclar.append({'texto': inc2, 'es_correcta': False})
+                
+            # Si rellenaron la Falsa 3, la añadimos
+            if pd.notna(inc3) and str(inc3).strip() != "":
+                opciones_mezclar.append({'texto': inc3, 'es_correcta': False})
+
+            preguntas_validas.append({
+                'enunciado': str(enunciado).replace('\n', ' '), # Limpiamos saltos de línea
+                'opciones': opciones_mezclar
+            })
+
+    total_preguntas = len(preguntas_validas)
+    if total_preguntas == 0:
+        print("El Excel está vacío o no coincide el nombre de las columnas.")
+        return
+
+    print(f"¡Éxito! Se han detectado {total_preguntas} preguntas válidas.")
+    print("Generando PDFs...")
+
+    # Aleatorizamos el orden de las preguntas
+    random.shuffle(preguntas_validas)
+    letras = ['A', 'B', 'C', 'D']
+    plantilla_respuestas = {}
+
+    # --- INICIAMOS EL PDF DEL EXAMEN ---
+    pdf_examen = PDF()
+    pdf_examen.add_page()
+    pdf_examen.set_font("Arial", size=11)
+
+    for numero, pregunta in enumerate(preguntas_validas, start=1):
+        # Escribimos el enunciado (multi_cell permite textos largos que saltan de línea)
+        texto_pregunta = f"{numero}. {pregunta['enunciado']}"
+        pdf_examen.multi_cell(0, 8, txt=texto_pregunta.encode('latin-1', 'replace').decode('latin-1'))
+
+        # Mezclamos las opciones de esta pregunta
+        opciones = pregunta['opciones']
+        random.shuffle(opciones)
+
+        for indice, opcion in enumerate(opciones):
+            letra = letras[indice]
+            texto_opcion = f"    {letra}) {opcion['texto']}"
+            pdf_examen.multi_cell(0, 6, txt=texto_opcion.encode('latin-1', 'replace').decode('latin-1'))
+
+            # Cazamos la correcta para la plantilla
+            if opcion['es_correcta']:
+                plantilla_respuestas[numero] = letra
+        
+        pdf_examen.ln(4) # Espacio extra entre preguntas
+
+    # Guardamos el PDF del examen
+    pdf_examen.output("Examen_Oficial.pdf")
+
+    # --- INICIAMOS EL PDF DE LA PLANTILLA ---
+    pdf_plantilla = PDF()
+    pdf_plantilla.add_page()
+    pdf_plantilla.set_font("Arial", 'B', 14)
+    pdf_plantilla.cell(0, 10, 'PLANTILLA DE CORRECCION (PARA EL TRIBUNAL)', 0, 1, 'C')
+    pdf_plantilla.ln(10)
+    
+    pdf_plantilla.set_font("Arial", size=12)
+    for numero in range(1, total_preguntas + 1):
+        texto_plantilla = f"Pregunta {numero}  ----------------------  Respuesta:  {plantilla_respuestas[numero]}"
+        pdf_plantilla.cell(0, 8, txt=texto_plantilla, ln=1)
+
+    # Guardamos la plantilla
+    pdf_plantilla.output("Plantilla_Correccion.pdf")
+    print("¡Terminado! Revisa tu carpeta, tienes dos archivos .pdf nuevos.")
+
+# Ejecutamos pasando el nombre de tu Excel
+generar_examen_y_pdf('respuestas1.xlsx')

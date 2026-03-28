@@ -1,6 +1,10 @@
 import pandas as pd
 import random
 from fpdf import FPDF
+from docxtpl import DocxTemplate
+from docx2pdf import convert
+import os
+from pypdf import PdfWriter
 
 # Creamos una clase personalizada para el PDF para poder poner acentos sin que explote
 class PDF(FPDF):
@@ -119,5 +123,67 @@ def generar_examen_y_pdf(ruta_excel):
     pdf_plantilla.output("Plantilla_Correccion.pdf")
     print("¡Terminado! Revisa tu carpeta, tienes dos archivos .pdf nuevos.")
 
+def generar_portada_desde_word(datos_variables):
+    # 1. Cargamos la plantilla de Word
+    doc = DocxTemplate("plantilla_portada.docx")
+    
+    # 2. Sustituimos las etiquetas {{...}} por los datos reales
+    # datos_variables es un diccionario: {'aspirante': 'Juan Pérez', ...}
+    doc.render(datos_variables)
+    
+    # 3. Guardamos el Word temporal ya relleno
+    ruta_word_relleno = "portada_rellena.docx"
+    doc.save(ruta_word_relleno)
+    
+    # 4. Lo convertimos a PDF
+    # NOTA: Esto requiere tener Word instalado en el PC
+    convert(ruta_word_relleno, "portada_final.pdf")
+    
+    try:                
+        # 3. Borramos el Word temporal para que solo quede el PDF limpio
+        os.remove(ruta_word_relleno) 
+    except Exception as e_pdf:
+        pass
+    return "portada_final.pdf"
+
+def fusionar_pdfs(ruta_portada, ruta_preguntas, nombre_final):
+    writer = PdfWriter()
+
+    # Añadimos la portada
+    with open(ruta_portada, "rb") as f_portada:
+        writer.append(f_portada)
+
+    # Añadimos las preguntas
+    with open(ruta_preguntas, "rb") as f_preguntas:
+        writer.append(f_preguntas)
+
+    # Guardamos el resultado final
+    with open(nombre_final, "wb") as f_salida:
+        writer.write(f_salida)
+    
+    print(f"¡Éxito! Examen completo generado en: {nombre_final}")
+
+mis_datos = {
+    "n_plazas": 3,
+    "oficio": "Policia",
+    "localidad" : "San Fernando",
+    "n_BOP": 226,
+    "fecha_BOP": "2 de marzo de 2027",
+    "condicion_aprobado": "Tiene que saca un 5 en el tipo test",
+    "n_preguntas": 10,
+    "n_reserva": 2,
+    "n_respuestas": 4,
+    "n_horas": 2,
+    "puntuacion": 1,
+    "error": 0.33
+}
+
 # Ejecutamos pasando el nombre de tu Excel
+generar_portada_desde_word(mis_datos)
 generar_examen_y_pdf('respuestas1.xlsx')
+
+fusionar_pdfs("portada_final.pdf", "Examen_Oficial.pdf", "EXAMEN_FINAL_COMPLETO.pdf")
+
+os.remove("portada_final.pdf")
+os.remove("Examen_Oficial.pdf")
+os.remove("portada_rellena.docx")

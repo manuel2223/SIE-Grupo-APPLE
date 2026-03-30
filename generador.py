@@ -5,6 +5,9 @@ from docxtpl import DocxTemplate
 from docx2pdf import convert
 import os
 from pypdf import PdfWriter
+import customtkinter as ctk
+from tkinter import messagebox
+from tkcalendar import DateEntry
 
 # Creamos una clase personalizada para el PDF para poder poner acentos sin que explote
 class PDF(FPDF):
@@ -163,27 +166,121 @@ def fusionar_pdfs(ruta_portada, ruta_preguntas, nombre_final):
     
     print(f"¡Éxito! Examen completo generado en: {nombre_final}")
 
-mis_datos = {
-    "n_plazas": 3,
-    "oficio": "Policia",
-    "localidad" : "San Fernando",
-    "n_BOP": 226,
-    "fecha_BOP": "2 de marzo de 2027",
-    "condicion_aprobado": "Tiene que saca un 5 en el tipo test",
-    "n_preguntas": 10,
-    "n_reserva": 2,
-    "n_respuestas": 4,
-    "n_horas": 2,
-    "puntuacion": 1,
-    "error": 0.33
-}
+# Configuración de apariencia
+ctk.set_appearance_mode("System")  # "Dark" o "Light"
+ctk.set_default_color_theme("blue")
 
-# Ejecutamos pasando el nombre de tu Excel
-generar_portada_desde_word(mis_datos)
-generar_examen_y_pdf('respuestas1.xlsx')
+class AppExamen(ctk.CTk):
+    def __init__(self):
+        super().__init__()
 
-fusionar_pdfs("portada_final.pdf", "Examen_Oficial.pdf", "EXAMEN_FINAL_COMPLETO.pdf")
+        self.title("Generador de Exámenes - Diputación de Cádiz")
+        self.geometry("500x700")
 
-os.remove("portada_final.pdf")
-os.remove("Examen_Oficial.pdf")
-os.remove("portada_rellena.docx")
+        # Cargar municipios desde Excel
+        try:
+            df_muni = pd.read_excel('municipios.xlsx')
+            self.lista_municipios = df_muni['Municipio'].astype(str).tolist()
+        except:
+            self.lista_municipios = ["Error cargando municipios.xlsx"]
+
+        # --- TÍTULO ---
+        self.label_titulo = ctk.CTkLabel(self, text="CONFIGURACIÓN DEL EXAMEN", font=ctk.CTkFont(size=20, weight="bold"))
+        self.label_titulo.pack(pady=20)
+
+        # --- FORMULARIO ---
+        self.scroll_frame = ctk.CTkScrollableFrame(self, width=450, height=500)
+        self.scroll_frame.pack(pady=10, padx=10, fill="both", expand=True)
+
+        self.inputs = {}
+        
+        # Campo Especial: Localidad (Menú desplegable)
+        ctk.CTkLabel(self.scroll_frame, text="Localidad:").pack(anchor="w", padx=10)
+        self.combo_localidad = ctk.CTkComboBox(self.scroll_frame, values=self.lista_municipios, width=400)
+        self.combo_localidad.pack(pady=(0, 10), padx=10)
+        self.combo_localidad.set("")
+
+        # Resto de campos dinámicos
+        campos = [
+            ("oficio", "Puesto / Oficio (ej: Policia)"),
+            ("n_plazas", "Número de Plazas"),
+            ("n_BOP", "Número de BOP"),
+            ("fecha_BOP", "Fecha del BOP (dd/mm/yyyy)"),
+            ("n_preguntas", "Número de Preguntas"),
+            ("n_reserva", "Preguntas de Reserva"),
+            ("n_horas", "Tiempo (Horas)"),
+            ("puntuacion", "Puntos por acierto"),
+            ("error", "Puntos que resta el fallo"),
+            ("condicion_aprobado", "Condición para aprobar")
+        ]
+
+        # --- SECCIÓN FECHA (CALENDARIO) ---
+        # ctk.CTkLabel(self.scroll_frame, text="Fecha del BOP").pack(anchor="w", padx=10)
+        # self.cal = DateEntry(self.scroll_frame, width=12, background='darkblue',
+        #                      foreground='white', borderwidth=2, locale='es_ES', date_pattern='dd/mm/yyyy')
+        # # El DateEntry es de Tkinter clásico, lo empaquetamos con cuidado
+        # self.cal.pack(pady=(0, 15), padx=10, anchor="w")
+
+        for key, placeholder in campos:
+            ctk.CTkLabel(self.scroll_frame, text=f"{placeholder}:").pack(anchor="w", padx=10)
+            entry = ctk.CTkEntry(self.scroll_frame, width=400, placeholder_text=placeholder)
+            entry.pack(pady=(0, 10), padx=10)
+            self.inputs[key] = entry
+
+        # --- BOTÓN GENERAR ---
+        self.btn_generar = ctk.CTkButton(self, text="GENERAR EXAMEN COMPLETO", command=self.ejecutar_proceso, 
+                                         fg_color="#2c3e50", hover_color="#34495e", height=50)
+        self.btn_generar.pack(pady=20)
+
+    def filtrar_municipios(self, event):
+        # Capturamos lo escrito
+        escrito = self.combo_localidad.get().lower()
+        
+        if escrito == "":
+            self.combo_localidad.configure(values=self.lista_municipios)
+        else:
+            filtrados = [m for m in self.lista_municipios if escrito in m.lower()]
+            if filtrados:
+                self.combo_localidad.configure(values=filtrados)
+            else:
+                self.combo_localidad.configure(values=["Sin coincidencias"])
+        
+        # Forzar que el menú se vea desplegado mientras escribes
+        self.combo_localidad._canvas.focus_set()
+
+    def ejecutar_proceso(self):
+        # 1. Recopilar datos de la interfaz
+        datos = {k: v.get() for k, v in self.inputs.items()}
+        datos["localidad"] = self.combo_localidad.get()
+        datos["n_respuestas"] = 4 # Valor fijo o añadir a la interfaz
+
+        # Validación básica
+        if not datos["oficio"] or not datos["localidad"]:
+            messagebox.showwarning("Atención", "Por favor, rellena al menos el Oficio y la Localidad.")
+            return
+
+        try:
+            # 2. Llamar a tus funciones (deben estar definidas en el mismo archivo)
+            print(f"Iniciando proceso para {datos['localidad']}...")
+            
+            ruta_portada = generar_portada_desde_word(datos)
+            generar_examen_y_pdf('respuestas1.xlsx')
+            
+            nombre_final = f"Examen_{datos['oficio']}_{datos['localidad']}.pdf"
+            fusionar_pdfs("portada_final.pdf", "Examen_Oficial.pdf", nombre_final)
+
+            nombre_plantilla_final = f"Plantilla_Examen_{datos['oficio']}_{datos['localidad']}.pdf"
+
+            # Limpieza
+            for f in ["portada_final.pdf", "Examen_Oficial.pdf"]:
+                try: os.remove(f)
+                except: pass
+
+            messagebox.showinfo("¡Éxito!", f"El examen se ha generado correctamente:\n{nombre_final}")
+        
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo generar el examen:\n{str(e)}")
+
+if __name__ == "__main__":
+    app = AppExamen()
+    app.mainloop()

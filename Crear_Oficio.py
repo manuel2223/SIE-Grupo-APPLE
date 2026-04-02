@@ -1,3 +1,5 @@
+from pdb import run
+from pydoc import doc
 import tkinter as tk
 from tkinter import messagebox
 from tkinter import filedialog
@@ -6,11 +8,23 @@ from ttkbootstrap.constants import *
 import pandas as pd
 from docxtpl import DocxTemplate
 import os
+import sys
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
+from docx.shared import Inches, Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-EXCEL_DATOS = "Base_de_Datos.xlsx"
-WORD_PLANTILLA = "Plantilla_Oficio.docx"
+if getattr(sys, 'frozen', False):
+    # Si el programa está compilado en .exe, busca en la carpeta del .exe
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    # Si lo ejecutas como .py, busca en la carpeta del .py
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+EXCEL_DATOS = os.path.join(BASE_DIR, "Datos_oficioremision.xlsx")
+WORD_PLANTILLA = os.path.join(BASE_DIR, "Plantilla_oficioremision.docx")
+# --------------------------------------------------------
 
 # --- NUESTRO BUSCADOR FLOTANTE PRO (AHORA CON ESTILO) ---
 class BuscadorPro(tb.Entry):
@@ -24,6 +38,8 @@ class BuscadorPro(tb.Entry):
         self.bind('<FocusOut>', lambda e: self.after(150, self.cerrar_popup))
         self.bind('<Button-1>', self.al_clicar)
         self.bind('<Down>', self.bajar_lista)
+        
+    
 
     def al_clicar(self, event):
         self.mostrar_popup(self.lista_opciones)
@@ -93,7 +109,14 @@ class BuscadorPro(tb.Entry):
         if self.popup and self.listbox and self.listbox.size() > 0:
             self.listbox.focus_set()
             self.listbox.selection_set(0)
-
+def aplicar_verdana(paragraph, texto, negrita=False, tamaño=10):
+    paragraph.clear() # Borra lo que hubiera
+    run = paragraph.add_run(texto)
+    run.font.name = 'Verdana'
+    run.font.size = Pt(tamaño)
+    run.bold = negrita
+    from docx.oxml.ns import qn
+    run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Verdana')
 # --- MAGIA NEGRA PARA EL WORD ---
 def aplicar_borde_grueso(cell):
     tc = cell._tc
@@ -116,7 +139,7 @@ class GeneradorOficiosApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Generador de Oficios Pro")
-        self.root.geometry("650x700")
+        self.root.geometry("700x800")
 
         self.municipios, self.personas, self.cargos = self.cargar_datos_excel()
 
@@ -138,7 +161,7 @@ class GeneradorOficiosApp:
 
         frame_superior.columnconfigure(1, weight=1)
 
-        # AQUÍ ESTABA EL ERROR: Cambiado LabelFrame por Labelframe (minúscula)
+        
         self.frame_tabla = tb.Labelframe(root, text="👥 Asistentes", bootstyle="info")
         self.frame_tabla.pack(fill="both", expand=True, padx=20, pady=5)
 
@@ -180,6 +203,8 @@ class GeneradorOficiosApp:
             df_cargos = pd.read_excel(EXCEL_DATOS, sheet_name="Cargos").dropna()
             
             municipios = [str(x) for x in df_municipios['Municipio'].tolist()]
+            # Guardamos un "diccionario" secreto que relaciona el nombre con su atributo
+            self.diccionario_atributos = dict(zip(df_municipios['Municipio'], df_municipios['Atributo']))
             personas = [str(x) for x in df_personas['Nombre'].tolist()]
             cargos = [str(x) for x in df_cargos['Cargo'].tolist()]
             
@@ -193,7 +218,7 @@ class GeneradorOficiosApp:
         row_frame = tb.Frame(self.scrollable_frame)
         row_frame.pack(fill="x", pady=5)
         
-        combo_persona = BuscadorPro(row_frame, lista_opciones=self.personas)
+        combo_persona = BuscadorPro(row_frame, lista_opciones=self.personas, width=40)
         combo_persona.pack(side="left", padx=5, fill="x", expand=True)
 
         combo_cargo = BuscadorPro(row_frame, lista_opciones=self.cargos, width=25)
@@ -216,8 +241,21 @@ class GeneradorOficiosApp:
     def generar_documento(self):
         try:
             expediente = self.expediente_entry.get().strip()
-            municipio = self.municipio_combo.get().strip()
-            asunto = self.asunto_entry.get().strip()
+            municipio_original = self.municipio_combo.get().strip()
+            asunto = self.asunto_entry.get().strip().upper()
+            
+            municipio = municipio_original.upper()
+            
+            # --- NUEVA LÓGICA DE AYUNTAMIENTOS ---
+            # Buscamos qué atributo tiene el sitio que hemos elegido
+            tipo_entidad = self.diccionario_atributos.get(municipio_original, "Municipio")
+
+            # Si es municipio, le pegamos la palabra delante. Si no, lo dejamos tal cual.
+            if str(tipo_entidad).strip().lower() == "municipio":
+                municipio_texto_final = f"AYUNTAMIENTO DE {municipio}"
+            else:
+                municipio_texto_final = municipio
+            # --------------------------------------
 
             if not (expediente and municipio and asunto):
                 messagebox.showwarning("Atención", "Rellena los campos Expediente, Municipio y Asunto.")
@@ -245,39 +283,79 @@ class GeneradorOficiosApp:
 
             context = {
                 'nexpediente': expediente,
-                'municipio': municipio,
+                'municipio': municipio_texto_final,
                 'asunto': asunto
             }
             doc = DocxTemplate(WORD_PLANTILLA)
             doc.render(context)
 
-            for table in doc.get_docx().tables:
+            for table in doc.docx.tables:
                 if len(table.columns) >= 2: 
-                    table.rows[0].cells[0].text = ""
-                    run_titulares = table.rows[0].cells[0].paragraphs[0].add_run("TITULARES")
-                    run_titulares.bold = True
+                    # --- 1. MATAR EL ANCHO DEL 100% DE LA PLANTILLA ---
+                    tblPr = table._element.xpath('w:tblPr')
+                    if tblPr:
+                        tblW = tblPr[0].xpath('w:tblW')
+                        if tblW:
+                            tblW[0].set(qn('w:type'), 'auto')
+                            tblW[0].set(qn('w:w'), '0')
+
+                    # Definimos tus medidas exactas
+                    ancho_c1 = Inches(1.8)
+                    ancho_c2 = Inches(2.0)
+                    
+                    table.columns[0].width = ancho_c1
+                    table.columns[1].width = ancho_c2
+                    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+                    # --- 2. DOMAR LA PRIMERA FILA (La rebelde) ---
+                    # Le forzamos el ancho celda a celda para que no coja el de la plantilla
+                    table.rows[0].cells[0].width = ancho_c1
+                    table.rows[0].cells[1].width = ancho_c2
+
+                    # --- FILA TITULARES CENTRADA ---
                     table.rows[0].cells[1].text = "" 
+                    p_tit = table.rows[0].cells[0].paragraphs[0]
+                    p_tit.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    aplicar_verdana(p_tit, "TITULARES", negrita=True, tamaño=10)
 
                     for t in titulares:
                         nueva_fila = table.add_row()
-                        nueva_fila.cells[0].text = t['cargo'].upper() 
-                        nueva_fila.cells[1].text = t['nombre']
+                        # --- 3. DOMAR LAS NUEVAS FILAS ---
+                        nueva_fila.cells[0].width = ancho_c1
+                        nueva_fila.cells[1].width = ancho_c2
+
+                        # Cargo en MAYÚSCULAS y NEGRILLA
+                        p_cargo = nueva_fila.cells[0].paragraphs[0]
+                        aplicar_verdana(p_cargo, t['cargo'].upper(), negrita=True, tamaño=9)
+                        
+                        # Nombre en MAYÚSCULAS
+                        p_nombre = nueva_fila.cells[1].paragraphs[0]
+                        aplicar_verdana(p_nombre, t['nombre'], negrita=False, tamaño=9)
+                        
                         aplicar_borde_grueso(nueva_fila.cells[0])
 
                     if suplentes:
                         fila_titulo_sup = table.add_row()
-                        fila_titulo_sup.cells[0].text = ""
-                        run_suplentes = fila_titulo_sup.cells[0].paragraphs[0].add_run("SUPLENTES")
-                        run_suplentes.bold = True
+                        fila_titulo_sup.cells[0].width = ancho_c1
+                        fila_titulo_sup.cells[1].width = ancho_c2
+
                         fila_titulo_sup.cells[1].text = "" 
+                        p_sup = fila_titulo_sup.cells[0].paragraphs[0]
+                        p_sup.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        aplicar_verdana(p_sup, "SUPLENTES", negrita=True, tamaño=10)
 
                         for s in suplentes:
                             fila_sup = table.add_row()
+                            fila_sup.cells[0].width = ancho_c1
+                            fila_sup.cells[1].width = ancho_c2
+
                             fila_sup.cells[0].text = "" 
-                            fila_sup.cells[1].text = s['nombre']
+                            p_nom_sup = fila_sup.cells[1].paragraphs[0]
+                            aplicar_verdana(p_nom_sup, s['nombre'], negrita=False, tamaño=9)
+                            
                             aplicar_borde_grueso(fila_sup.cells[0])
                             
-                    break 
+                    break
 
             # --- LA NUEVA MAGIA: VENTANITA DE GUARDAR COMO ---
             nombre_sugerido = f"Oficio - {municipio} - Expediente {expediente}.pdf"
@@ -302,6 +380,13 @@ class GeneradorOficiosApp:
             
             # 2. Convertimos a PDF en esa misma ruta
             try:
+                # --- PARCHE ANTI-EXPLOSIÓN PARA PYINSTALLER WINDOWED ---
+                if sys.stdout is None:
+                    sys.stdout = open(os.devnull, "w")
+                if sys.stderr is None:
+                    sys.stderr = open(os.devnull, "w")
+                # -------------------------------------------------------
+
                 from docx2pdf import convert
                 convert(ruta_word_temp, ruta_pdf_final)
                 

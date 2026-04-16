@@ -312,6 +312,8 @@ class AppExamen(ctk.CTk):
                 nombre_final = f"Examen_{datos['oficio']}_{conv}.pdf"
                 fusionar_pdfs("portada_final.pdf", "Examen_Oficial.pdf", nombre_final)
                 messagebox.showinfo("Éxito", f"Examen generado: {nombre_final}")
+                os.remove("portada_final.pdf")
+                os.remove("Examen_Oficial.pdf")
         except Exception as e:
             messagebox.showerror("Error", str(e))
 

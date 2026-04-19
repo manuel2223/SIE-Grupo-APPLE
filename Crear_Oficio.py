@@ -153,7 +153,7 @@ class GeneradorOficiosApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Generador de Oficios Pro")
-        self.geometry("750x850")
+        self.geometry("750x750")
 
         self.municipios, self.personas, self.cargos = self.cargar_datos_excel()
 

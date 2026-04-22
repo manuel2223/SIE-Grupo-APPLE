@@ -4,11 +4,12 @@ import os
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from fpdf import FPDF
-from docxtpl import DocxTemplate
+from docxtpl import DocxTemplate, RichText
 from docx2pdf import convert
 from pypdf import PdfWriter
 import customtkinter as ctk
 from tkinter import messagebox
+import re
 
 # --- CONFIGURACIÓN DE LA NUBE ---
 NOMBRE_EXCEL_NUBE = "Banco de Preguntas SAEL (Definitivo) (respuestas)"
@@ -17,64 +18,70 @@ NOMBRE_EXCEL_NUBE = "Banco de Preguntas SAEL (Definitivo) (respuestas)"
 # 1. FUNCIONES DE GENERACIÓN DE PDF (Sin cambios)
 # ==========================================
 class PDF(FPDF):
-    def header(self):
-        self.set_font('Arial', 'B', 15)
-        self.cell(0, 10, 'EXAMEN DE CAPTACION - DIPUTACION DE CADIZ', 0, 1, 'C')
-        self.ln(5)
+    def __init__(self, tipo_examen=""):
+        super().__init__()
+        self.tipo_examen = tipo_examen
+        
+        self.add_font('Verdana', '', 'verdana.ttf')
+        self.add_font('Verdana', 'B', 'verdanab.ttf')
 
-def generar_examen_y_pdf(lista_preguntas):
+    def header(self):
+        try:
+            self.image('logo_dipu.png', 10, 8, 33) 
+        except:
+            pass 
+            
+        self.set_font('Verdana', 'B', 14) # Un pelín más pequeño para que no roce los bordes
+        self.set_x(45) 
+        self.cell(0, 10, 'EXAMEN DE CAPTACION - DIPUTACION DE CADIZ', 0, 1, 'C')
+        
+        if getattr(self, 'tipo_examen', ''):
+            self.set_x(45)
+            self.set_font('Verdana', 'B', 12)
+            self.cell(0, 8, f'MODELO: {str(self.tipo_examen).upper()}', 0, 1, 'C')
+            
+        self.ln(5)
+        self.set_x(10) # ¡SEGURO ANTI-ERRORES! Forzamos el lápiz a la izquierda
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Verdana', '', 8) 
+        texto_pagina = 'Página ' + str(self.page_no()) + '/{nb}'
+        self.cell(0, 10, texto_pagina, 0, 0, 'C')
+        
+        
+        
+def generar_examen_y_pdf(lista_preguntas, conv, tipo_examen=""):
     preguntas_normales = []
     preguntas_reserva = []
 
+    # 1. EXTRACCIÓN DE DATOS
     for fila in lista_preguntas:
         for i in range(1, 21): 
             col_enunciado = f'Enunciado de la Pregunta {i}'
             col_enunciado_reserva = f'Enunciado de la Pregunta de Reserva {i}'
 
-                        # ===== NORMAL =====
             if col_enunciado in fila and fila[col_enunciado]:
-
                 enunciado = fila[col_enunciado]
                 correcta = fila.get(f'Opción CORRECTA (Pregunta {i})', '')
                 inc1 = fila.get(f'Opción Falsa 1 (Pregunta {i})', '')
                 inc2 = fila.get(f'Opción Falsa 2 (Pregunta {i}) - Opcional', '')
                 inc3 = fila.get(f'Opción Falsa 3 (Pregunta {i}) - Opcional', '')
-
-                opciones_mezclar = [
-                    {'texto': correcta, 'es_correcta': True},
-                    {'texto': inc1, 'es_correcta': False}
-                ]
-
+                opciones_mezclar = [{'texto': correcta, 'es_correcta': True}, {'texto': inc1, 'es_correcta': False}]
                 if inc2: opciones_mezclar.append({'texto': inc2, 'es_correcta': False})
                 if inc3: opciones_mezclar.append({'texto': inc3, 'es_correcta': False})
+                preguntas_normales.append({'enunciado': str(enunciado).replace('\n', ' '), 'opciones': opciones_mezclar})
 
-                preguntas_normales.append({
-                    'enunciado': str(enunciado).replace('\n', ' '),
-                    'opciones': opciones_mezclar
-                })
-
-
-            # ===== RESERVA =====
             if col_enunciado_reserva in fila and fila[col_enunciado_reserva]:
-
                 enunciado_reserva = fila[col_enunciado_reserva]
                 correcta_reserva = fila.get(f'Opción CORRECTA (Pregunta de Reserva {i})', '')
                 inc4 = fila.get(f'Opción Falsa 1 (Pregunta de Reserva {i})', '')
                 inc5 = fila.get(f'Opción Falsa 2 (Pregunta de Reserva {i}) - Opcional', '')
                 inc6 = fila.get(f'Opción Falsa 3 (Pregunta de Reserva {i}) - Opcional', '')
-
-                opciones_mezclar_reserva = [
-                    {'texto': correcta_reserva, 'es_correcta': True},
-                    {'texto': inc4, 'es_correcta': False}
-                ]
-
+                opciones_mezclar_reserva = [{'texto': correcta_reserva, 'es_correcta': True}, {'texto': inc4, 'es_correcta': False}]
                 if inc5: opciones_mezclar_reserva.append({'texto': inc5, 'es_correcta': False})
                 if inc6: opciones_mezclar_reserva.append({'texto': inc6, 'es_correcta': False})
-
-                preguntas_reserva.append({
-                    'enunciado': str(enunciado_reserva).replace('\n', ' '),
-                    'opciones': opciones_mezclar_reserva
-                })
+                preguntas_reserva.append({'enunciado': str(enunciado_reserva).replace('\n', ' '), 'opciones': opciones_mezclar_reserva})
 
     if not preguntas_normales: return False
 
@@ -84,55 +91,154 @@ def generar_examen_y_pdf(lista_preguntas):
     plantilla_respuestas = {}
     plantilla_respuestas_reserva = {}
 
-    pdf_examen = PDF()
+    # 2. CREACIÓN DEL PDF DEL EXAMEN
+    pdf_examen = PDF(tipo_examen)
     pdf_examen.add_page()
-    pdf_examen.set_font("Arial", size=11)
+    pdf_examen.set_font("Verdana", size=11)
 
+    # --- BUCLE 1: NORMALES ---
     for numero, pregunta in enumerate(preguntas_normales, start=1):
-        pdf_examen.multi_cell(0, 8, txt=f"{numero}. {pregunta['enunciado']}".encode('latin-1', 'replace').decode('latin-1'))
+        
+        # 🟢 EL RADAR INTELIGENTE (Optimizado para Verdana 10.5) 🟢
+        texto_enun = f"{numero}. {pregunta['enunciado']}"
+        lineas_enun = (len(texto_enun) // 85) + 1 # Subimos a 85 caracteres
+        altura_estimada = (lineas_enun * 8)
+        
+        for opcion in pregunta['opciones']:
+            lineas_op = (len(opcion['texto']) // 75) + 1 # Subimos a 75 caracteres
+            altura_estimada += (lineas_op * 6)
+            
+        altura_estimada += 12 # Espaciado extra de seguridad
+        
+        # Límite en 270mm (en lugar de 277) para evitar tocar el pie de página
+        if pdf_examen.get_y() + altura_estimada > 270:
+            pdf_examen.add_page()
+        # ------------------------------------------------
+
+        pdf_examen.set_x(10) 
+        pdf_examen.multi_cell(0, 8, f"{numero}. {pregunta['enunciado']}")
+        
         opciones = pregunta['opciones']
         random.shuffle(opciones)
         for indice, opcion in enumerate(opciones):
             letra = letras[indice]
-            pdf_examen.multi_cell(0, 6, txt=f"    {letra}) {opcion['texto']}".encode('latin-1', 'replace').decode('latin-1'))
+            pdf_examen.set_x(18) 
+            pdf_examen.multi_cell(0, 6, f"{letra}) {opcion['texto']}")
             if opcion['es_correcta']: plantilla_respuestas[numero] = letra
+            
         pdf_examen.ln(4)
 
-    pdf_examen.add_page()
-    pdf_examen.cell(0, 10, 'PREGUNTAS DE RESERVA', 0, 1, 'C')
-    pdf_examen.ln(10)
+    # --- BUCLE 2: RESERVAS ---
+    if preguntas_reserva:
+        pdf_examen.add_page()
+        pdf_examen.set_font("Verdana", 'B', 12)
+        pdf_examen.cell(0, 10, 'PREGUNTAS DE RESERVA', 0, 1, 'C')
+        pdf_examen.ln(5)
+        pdf_examen.set_font("Verdana", size=11)
 
-    for numero, pregunta in enumerate(preguntas_reserva, start=1):
-        pdf_examen.multi_cell(0, 8, txt=f"{numero}. {pregunta['enunciado']}".encode('latin-1', 'replace').decode('latin-1'))
-        opciones = pregunta['opciones']
-        random.shuffle(opciones)
-        for indice, opcion in enumerate(opciones):
-            letra = letras[indice]
-            pdf_examen.multi_cell(0, 6, txt=f"    {letra}) {opcion['texto']}".encode('latin-1', 'replace').decode('latin-1'))
-            if opcion['es_correcta']: plantilla_respuestas_reserva[numero] = letra
-        pdf_examen.ln(4)
+        for numero, pregunta in enumerate(preguntas_reserva, start=1):
+            
+            # 🟢 RADAR INTELIGENTE PARA RESERVAS 🟢
+            # 🟢 EL RADAR INTELIGENTE (Optimizado para Verdana 10.5) 🟢
+            texto_enun = f"{numero}. {pregunta['enunciado']}"
+            lineas_enun = (len(texto_enun) // 85) + 1 # Subimos a 85 caracteres
+            altura_estimada = (lineas_enun * 8)
+        
+            for opcion in pregunta['opciones']:
+                lineas_op = (len(opcion['texto']) // 75) + 1 # Subimos a 75 caracteres
+                altura_estimada += (lineas_op * 6)
+            
+            altura_estimada += 12
+            
+            if pdf_examen.get_y() + altura_estimada > 270:
+                pdf_examen.add_page()
+            # ------------------------------------------------
+
+            pdf_examen.set_x(10)
+            pdf_examen.multi_cell(0, 8, f"{numero}. {pregunta['enunciado']}")
+            
+            opciones = pregunta['opciones']
+            random.shuffle(opciones)
+            for indice, opcion in enumerate(opciones):
+                letra = letras[indice]
+                pdf_examen.set_x(18) 
+                pdf_examen.multi_cell(0, 6, f"{letra}) {opcion['texto']}")
+                if opcion['es_correcta']: plantilla_respuestas_reserva[numero] = letra
+                
+            pdf_examen.ln(4)
 
     pdf_examen.output("Examen_Oficial.pdf")
 
-    pdf_plantilla = PDF()
+    # 3. CREACIÓN DE LA PLANTILLA DE CORRECCIÓN
+    pdf_plantilla = PDF(tipo_examen)
     pdf_plantilla.add_page()
-    pdf_plantilla.set_font("Arial", 'B', 14)
+    pdf_plantilla.set_font("Verdana", 'B', 14)
     pdf_plantilla.cell(0, 10, 'PLANTILLA DE CORRECCION', 0, 1, 'C')
     pdf_plantilla.ln(10)
-    pdf_plantilla.set_font("Arial", size=12)
+    pdf_plantilla.set_font("Verdana", size=12)
+    
     for numero, letra in plantilla_respuestas.items():
-        pdf_plantilla.cell(0, 8, txt=f"Pregunta {numero}  -------  Respuesta: {letra}", ln=1)
+        pdf_plantilla.cell(0, 8, f"Pregunta {numero}  -------  Respuesta: {letra}", 0, 1)
 
-    pdf_plantilla.cell(0, 10, 'PREGUNTAS DE RESERVA', 0, 1, 'C')
-    pdf_plantilla.ln(10)
-
-    for numero, letra in plantilla_respuestas_reserva.items():
-        pdf_plantilla.cell(0, 8, txt=f"Pregunta {numero}  -------  Respuesta: {letra}", ln=1)
-    pdf_plantilla.output("Plantilla_Correccion.pdf")
+    if plantilla_respuestas_reserva:
+        pdf_plantilla.add_page()
+        pdf_plantilla.set_font("Verdana", 'B', 14)
+        pdf_plantilla.cell(0, 10, 'RESPUESTAS - PREGUNTAS DE RESERVA', 0, 1, 'C')
+        pdf_plantilla.ln(10)
+        pdf_plantilla.set_font("Verdana", size=12)
+        
+        for numero, letra in plantilla_respuestas_reserva.items():
+            pdf_plantilla.cell(0, 8, f"Pregunta de Reserva {numero}  -------  Respuesta: {letra}", 0, 1)
+            
+    pdf_plantilla.output(f"PlantillaCorreccion_{conv}_modelo-{tipo_examen}.pdf")
     return True
+
+
+def procesar_texto_enriquecido(texto):
+    """
+    Escanea el texto y convierte:
+    *texto* -> Negrita
+    _texto_ -> Subrayado
+    *_texto_* -> Negrita Y Subrayado
+    Todo forzado a Verdana 10.5 (size=21 en XML de Word)
+    """
+    rt = RichText()
+    
+    # Nuevo escáner más inteligente que pilla combinaciones
+    partes = re.split(r'(\*_[^_]+_\*|\*[^*]+\*|_[^_]+_)', texto)
+    
+    for parte in partes:
+        if not parte:
+            continue
+            
+        # 1. NEGRITA Y SUBRAYADO a la vez (*_texto_*)
+        if parte.startswith('*_') and parte.endswith('_*'):
+            rt.add(parte[2:-2], bold=True, underline=True, font='Verdana', size=21)
+            
+        # 2. SOLO NEGRITA (*texto*)
+        elif parte.startswith('*') and parte.endswith('*'):
+            rt.add(parte[1:-1], bold=True, font='Verdana', size=21)
+            
+        # 3. SOLO SUBRAYADO (_texto_)
+        elif parte.startswith('_') and parte.endswith('_'):
+            rt.add(parte[1:-1], underline=True, font='Verdana', size=21)
+            
+        # 4. TEXTO NORMAL (Respeta los saltos de línea \n)
+        else:
+            rt.add(parte, font='Verdana', size=21)
+            
+    return rt
 
 def generar_portada_desde_word(datos_variables):
     doc = DocxTemplate("Plantilla_Portada.docx")
+    
+    # --- INTERCEPTAMOS LAS INSTRUCCIONES ---
+    # Si hay instrucciones, las pasamos por nuestro traductor antes de inyectarlas
+    if "instrucciones" in datos_variables and datos_variables["instrucciones"].strip():
+        texto_crudo = datos_variables["instrucciones"]
+        datos_variables["instrucciones"] = procesar_texto_enriquecido(texto_crudo)
+    # ---------------------------------------
+    
     doc.render(datos_variables)
     doc.save("portada_temp.docx")
     convert("portada_temp.docx", "portada_final.pdf")
@@ -189,19 +295,40 @@ class AppExamen(ctk.CTk):
         self.scroll_generar = ctk.CTkScrollableFrame(self.tab_generar)
         self.scroll_generar.pack(fill="both", expand=True, padx=10, pady=10)
 
+        # --- CUADRO INFORMATIVO DE FORMATO ---
+        self.frame_info = ctk.CTkFrame(self.scroll_generar, fg_color="#34495e")
+        self.frame_info.pack(fill="x", padx=10, pady=10)
+        
+        info_text = (
+            "Ayuda de Formato:\n"
+            "• Para NEGRITA: pon el texto entre asteriscos -> *texto*\n"
+            "• Para SUBRAYADO: pon el texto entre guiones bajos -> _texto_\n"
+            "• Para AMBOS: combínalos así -> *_texto_*"
+        )
+        self.lbl_ayuda = ctk.CTkLabel(self.frame_info, text=info_text, justify="left", font=ctk.CTkFont(size=12))
+        self.lbl_ayuda.pack(pady=10, padx=10)
+
+        # --- CAMPOS DE DATOS ---
         self.inputs = {}
-        campos = [("oficio", "Puesto"), ("localidad", "Municipio"), ("n_plazas", "Plazas"), ("n_BOP", "BOP")]
+        # Aquí mantenemos el Modelo (Tipo A, B...)
+        campos = [
+            
+            ("tipo_examen", "Modelo (A, B, C...)") # Este es el que genera Modelo A, B...
+        ]
+        
         for key, placeholder in campos:
             ctk.CTkLabel(self.scroll_generar, text=f"{placeholder}:").pack(anchor="w", padx=10)
             entry = ctk.CTkEntry(self.scroll_generar, width=400)
             entry.pack(pady=5, padx=10)
             self.inputs[key] = entry
 
+        # --- EL MEGA CAMPO DE INSTRUCCIONES ---
         ctk.CTkLabel(self.scroll_generar, text="Instrucciones del Examen:").pack(anchor="w", padx=10)
-        self.txt_instrucciones = ctk.CTkTextbox(self.scroll_generar, width=400, height=100)
+        self.txt_instrucciones = ctk.CTkTextbox(self.scroll_generar, width=400, height=200) # Más alto
         self.txt_instrucciones.pack(pady=5, padx=10)
 
-        self.btn_generar = ctk.CTkButton(self.scroll_generar, text="2. GENERAR PDF", command=self.ejecutar_generacion, height=50, state="disabled")
+        self.btn_generar = ctk.CTkButton(self.scroll_generar, text="2. GENERAR PDF FINAL", 
+                                         command=self.ejecutar_generacion, height=50, state="disabled")
         self.btn_generar.pack(pady=20)
 
     # --- PESTAÑA 2: GESTOR DE PREGUNTAS (MAESTRO-DETALLE) ---
@@ -404,11 +531,11 @@ class AppExamen(ctk.CTk):
         
         datos = {k: v.get() for k, v in self.inputs.items()}
         datos["instrucciones"] = self.txt_instrucciones.get("1.0", "end-1c")
-
+        tipo_examen = self.inputs.get("tipo_examen").get() if "tipo_examen" in self.inputs else ""
         try:
             generar_portada_desde_word(datos)
-            if generar_examen_y_pdf(df_filtrado.to_dict('records')):
-                nombre_final = f"Examen_{datos['oficio']}_{conv}.pdf"
+            if generar_examen_y_pdf(df_filtrado.to_dict('records'), conv, tipo_examen):
+                nombre_final = f"Examen_{conv}_modelo-{datos['tipo_examen']}.pdf"
                 fusionar_pdfs("portada_final.pdf", "Examen_Oficial.pdf", nombre_final)
                 messagebox.showinfo("Éxito", f"Examen generado: {nombre_final}")
                 os.remove("portada_final.pdf")
@@ -419,3 +546,8 @@ class AppExamen(ctk.CTk):
 if __name__ == "__main__":
     app = AppExamen()
     app.mainloop()
+    
+    
+    
+    
+    

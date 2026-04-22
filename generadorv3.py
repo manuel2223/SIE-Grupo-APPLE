@@ -123,7 +123,6 @@ def generar_examen_y_pdf(lista_preguntas):
     for numero, letra in plantilla_respuestas.items():
         pdf_plantilla.cell(0, 8, txt=f"Pregunta {numero}  -------  Respuesta: {letra}", ln=1)
 
-    pdf_plantilla.add_page()
     pdf_plantilla.cell(0, 10, 'PREGUNTAS DE RESERVA', 0, 1, 'C')
     pdf_plantilla.ln(10)
 

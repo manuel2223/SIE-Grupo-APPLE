@@ -11,6 +11,19 @@ from docx.oxml.ns import qn
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+def conectar_google_sheets():
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds = ServiceAccountCredentials.from_json_keyfile_name(
+        os.path.join(BASE_DIR, "credenciales.json"), scope
+    )
+    client = gspread.authorize(creds)
+    return client
 
 # --- CONFIGURACIÓN DE APARIENCIA (ESTILO MODERNO) ---
 ctk.set_appearance_mode("System")  # Se adapta al modo oscuro/claro de Windows
@@ -198,25 +211,29 @@ class GeneradorOficiosApp(ctk.CTk):
 
     def cargar_datos_excel(self):
         try:
-            if not os.path.exists(EXCEL_DATOS):
-                messagebox.showerror("Error", f"No se encuentra el archivo {EXCEL_DATOS}.")
-                self.destroy()
-                return [], [], []
-            
-            df_municipios = pd.read_excel(EXCEL_DATOS, sheet_name="Municipios").dropna()
-            df_municipios.columns = df_municipios.columns.str.strip()
-            
-            df_personas = pd.read_excel(EXCEL_DATOS, sheet_name="Personas").dropna()
-            df_cargos = pd.read_excel(EXCEL_DATOS, sheet_name="Cargos").dropna()
-            
-            municipios = [str(x) for x in df_municipios['Municipio'].tolist()]
+            client = conectar_google_sheets()
+
+            # Usa el nombre del documento o su URL
+            spreadsheet = client.open("Datos_oficioremision")
+
+            hoja_municipios = spreadsheet.worksheet("Municipios")
+            hoja_personas = spreadsheet.worksheet("Personas")
+            hoja_cargos = spreadsheet.worksheet("Cargos")
+
+            df_municipios = pd.DataFrame(hoja_municipios.get_all_records())
+            df_personas = pd.DataFrame(hoja_personas.get_all_records())
+            df_cargos = pd.DataFrame(hoja_cargos.get_all_records())
+
+            municipios = df_municipios['Municipio'].tolist()
             self.diccionario_atributos = dict(zip(df_municipios['Municipio'], df_municipios['Atributo']))
-            personas = [str(x) for x in df_personas['Nombre'].tolist()]
-            cargos = [str(x) for x in df_cargos['Cargo'].tolist()]
-            
+
+            personas = df_personas['Nombre'].tolist()
+            cargos = df_cargos['Cargo'].tolist()
+
             return municipios, personas, cargos
+
         except Exception as e:
-            messagebox.showerror("Error Critico", f"No se pudo leer el Excel: {e}")
+            messagebox.showerror("Error Critico", f"No se pudo leer Google Sheets: {e}")
             self.destroy()
             return [], [], []
 

@@ -22,8 +22,8 @@ class PDF(FPDF):
         super().__init__()
         self.tipo_examen = tipo_examen
         
-        self.add_font('Verdana', '', 'verdana.ttf')
-        self.add_font('Verdana', 'B', 'verdanab.ttf')
+        self.add_font('Verdana', '', 'verdana.ttf', uni = True)
+        self.add_font('Verdana', 'B', 'verdanab.ttf', uni = True)
 
     def header(self):
         try:
@@ -367,6 +367,16 @@ class AppExamen(ctk.CTk):
 
         self.btn_guardar_cambios = ctk.CTkButton(self.frame_detalle, text="💾 GUARDAR CAMBIOS EN LA NUBE", command=self.guardar_edicion, fg_color="#27ae60", hover_color="#2ecc71", state="disabled")
         self.btn_guardar_cambios.pack(pady=20)
+        
+        self.btn_eliminar = ctk.CTkButton(
+            self.frame_detalle,
+            text="🗑️ ELIMINAR PREGUNTA",
+            command=self.eliminar_pregunta,
+            fg_color="#c0392b",
+            hover_color="#e74c3c",
+            state="disabled"
+        )
+        self.btn_eliminar.pack(pady=5)
 
     # ==========================================
     # LÓGICA DE DATOS Y CONEXIÓN
@@ -481,7 +491,8 @@ class AppExamen(ctk.CTk):
         for entry, clave in zip(entradas, claves):
             entry.delete(0, "end")
             entry.insert(0, str(preg[clave]))
-            
+        
+        self.btn_eliminar.configure(state="normal")
         self.btn_guardar_cambios.configure(state="normal")
 
     def guardar_edicion(self):
@@ -542,6 +553,60 @@ class AppExamen(ctk.CTk):
                 os.remove("Examen_Oficial.pdf")
         except Exception as e:
             messagebox.showerror("Error", str(e))
+            
+    def eliminar_pregunta(self):
+        if not self.pregunta_seleccionada:
+            return
+
+        confirmar = messagebox.askyesno(
+            "Confirmar eliminación",
+            "¿Seguro que quieres eliminar esta pregunta?\n\n(Esta acción no se puede deshacer)"
+        )
+
+        if not confirmar:
+            return
+
+        try:
+            preg = self.pregunta_seleccionada
+            tipo = preg.get('tipo', 'normal')
+            f_excel = preg['fila_excel']
+            b = preg['bloque']
+
+            # Detectar columnas
+            if tipo == 'normal':
+                col_enun = self.encabezados.index(f'Enunciado de la Pregunta {b}') + 1
+                col_corr = self.encabezados.index(f'Opción CORRECTA (Pregunta {b})') + 1
+                col_f1 = self.encabezados.index(f'Opción Falsa 1 (Pregunta {b})') + 1
+                col_f2 = self.encabezados.index(f'Opción Falsa 2 (Pregunta {b}) - Opcional') + 1
+                col_f3 = self.encabezados.index(f'Opción Falsa 3 (Pregunta {b}) - Opcional') + 1
+            else:
+                col_enun = self.encabezados.index(f'Enunciado de la Pregunta de Reserva {b}') + 1
+                col_corr = self.encabezados.index(f'Opción CORRECTA (Pregunta de Reserva {b})') + 1
+                col_f1 = self.encabezados.index(f'Opción Falsa 1 (Pregunta de Reserva {b})') + 1
+                col_f2 = self.encabezados.index(f'Opción Falsa 2 (Pregunta de Reserva {b}) - Opcional') + 1
+                col_f3 = self.encabezados.index(f'Opción Falsa 3 (Pregunta de Reserva {b}) - Opcional') + 1
+
+            # 🔥 BORRAR = dejar vacío
+            self.hoja.update_cell(f_excel, col_enun, "")
+            self.hoja.update_cell(f_excel, col_corr, "")
+            self.hoja.update_cell(f_excel, col_f1, "")
+            self.hoja.update_cell(f_excel, col_f2, "")
+            self.hoja.update_cell(f_excel, col_f3, "")
+
+            messagebox.showinfo("Eliminado", "Pregunta eliminada correctamente.\n(Recarga para ver cambios)")
+
+            # Limpiar interfaz
+            self.txt_edit_enun.delete("1.0", "end")
+            self.entry_edit_corr.delete(0, "end")
+            self.entry_edit_f1.delete(0, "end")
+            self.entry_edit_f2.delete(0, "end")
+            self.entry_edit_f3.delete(0, "end")
+
+            self.btn_guardar_cambios.configure(state="disabled")
+            self.btn_eliminar.configure(state="disabled")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo eliminar: {e}")
 
 if __name__ == "__main__":
     app = AppExamen()

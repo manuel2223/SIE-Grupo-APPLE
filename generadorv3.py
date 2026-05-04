@@ -8,7 +8,7 @@ from docxtpl import DocxTemplate, RichText
 from docx2pdf import convert
 from pypdf import PdfWriter
 import customtkinter as ctk
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 import re
 
 # --- CONFIGURACIÓN DE LA NUBE ---
@@ -51,7 +51,7 @@ class PDF(FPDF):
         
         
         
-def generar_examen_y_pdf(lista_preguntas, conv, tipo_examen=""):
+def generar_examen_y_pdf(lista_preguntas, conv, ruta_destino, tipo_examen=""):
     preguntas_normales = []
     preguntas_reserva = []
 
@@ -189,8 +189,10 @@ def generar_examen_y_pdf(lista_preguntas, conv, tipo_examen=""):
         
         for numero, letra in plantilla_respuestas_reserva.items():
             pdf_plantilla.cell(0, 8, f"Pregunta de Reserva {numero}  -------  Respuesta: {letra}", 0, 1)
-            
-    pdf_plantilla.output(f"PlantillaCorreccion_{conv}_modelo-{tipo_examen}.pdf")
+
+    # Guardamos la plantilla directamente en la carpeta que eligió el jefe
+    ruta_plantilla = os.path.join(ruta_destino, f"PlantillaCorreccion_{conv}_modelo-{tipo_examen}.pdf")
+    pdf_plantilla.output(ruta_plantilla)
     return True
 
 
@@ -542,15 +544,43 @@ class AppExamen(ctk.CTk):
         
         datos = {k: v.get() for k, v in self.inputs.items()}
         datos["instrucciones"] = self.txt_instrucciones.get("1.0", "end-1c")
+
+        # Capturamos el tipo de examen
         tipo_examen = self.inputs.get("tipo_examen").get() if "tipo_examen" in self.inputs else ""
+
+        # --- 1. ABRIR VENTANA PARA ELEGIR CARPETA ---
+        ruta_destino = filedialog.askdirectory(title="Selecciona la carpeta para guardar los PDFs")
+        
+        # Si el usuario cierra la ventana o le da a Cancelar, paramos la función en seco
+        if not ruta_destino: 
+            return 
+        # ---------------------------------------------
+
         try:
+            # 2. Generamos la portada temporal
             generar_portada_desde_word(datos)
-            if generar_examen_y_pdf(df_filtrado.to_dict('records'), conv, tipo_examen):
+            
+            # 3. ¡LA LLAMADA CLAVE! Le pasamos el orden correcto: lista, conv, ruta_destino, tipo_examen
+            if generar_examen_y_pdf(df_filtrado.to_dict('records'), conv, ruta_destino, tipo_examen):
+                
+                # 4. Preparamos el Examen Final
+                sufijo = f"_Tipo_{tipo_examen}" if tipo_examen else ""
                 nombre_final = f"Examen_{conv}_modelo-{datos['tipo_examen']}.pdf"
-                fusionar_pdfs("portada_final.pdf", "Examen_Oficial.pdf", nombre_final)
-                messagebox.showinfo("Éxito", f"Examen generado: {nombre_final}")
-                os.remove("portada_final.pdf")
-                os.remove("Examen_Oficial.pdf")
+                
+                # Unimos la ruta elegida con el nombre del archivo final
+                ruta_examen_final = os.path.join(ruta_destino, nombre_final)
+                
+                # Fusionamos la portada y el examen directamente en la ruta final
+                fusionar_pdfs("portada_final.pdf", "Examen_Oficial.pdf", ruta_examen_final)
+                
+                messagebox.showinfo("Éxito", f"¡Archivos generados correctamente en:\n{ruta_destino}")
+                
+                # 5. Limpiamos la basura temporal
+                try: os.remove("portada_final.pdf")
+                except: pass
+                try: os.remove("Examen_Oficial.pdf")
+                except: pass
+                
         except Exception as e:
             messagebox.showerror("Error", str(e))
             

@@ -4,6 +4,7 @@ from tkinter import filedialog
 import customtkinter as ctk
 import pandas as pd
 from docxtpl import DocxTemplate
+import win32com.client
 import os
 import sys
 from docx.oxml import OxmlElement
@@ -204,8 +205,21 @@ class GeneradorOficiosApp(ctk.CTk):
         btn_add = ctk.CTkButton(self, text="+ Añadir Persona", fg_color="transparent", border_width=2, text_color=("black", "white"), command=self.añadir_fila_asistente)
         btn_add.pack(pady=10)
 
-        btn_generar = ctk.CTkButton(self, text="🚀 Generar Documento PDF", font=ctk.CTkFont(weight="bold", size=14), fg_color="#27ae60", hover_color="#2ecc71", height=50, command=self.generar_documento)
-        btn_generar.pack(fill="x", padx=40, pady=20)
+        # --- CONTENEDOR DE BOTONES DE GENERACIÓN ---
+        frame_botones = ctk.CTkFrame(self, fg_color="transparent")
+        frame_botones.pack(fill="x", padx=40, pady=20)
+
+        self.btn_pdf = ctk.CTkButton(frame_botones, text="🚀 Generar PDF", 
+                                     font=ctk.CTkFont(weight="bold"), fg_color="#27ae60", 
+                                     hover_color="#2ecc71", height=50, 
+                                     command=lambda: self.generar_documento("pdf"))
+        self.btn_pdf.pack(side="left", fill="x", expand=True, padx=(0, 10))
+
+        self.btn_odt = ctk.CTkButton(frame_botones, text="📝 Generar ODT (LibreOffice)", 
+                                     font=ctk.CTkFont(weight="bold"), fg_color="#2980b9", 
+                                     hover_color="#3498db", height=50, 
+                                     command=lambda: self.generar_documento("odt"))
+        self.btn_odt.pack(side="left", fill="x", expand=True)
 
         self.añadir_fila_asistente() 
 
@@ -261,7 +275,7 @@ class GeneradorOficiosApp(ctk.CTk):
                 break
         self.filas_widgets.remove(frame)
 
-    def generar_documento(self):
+    def generar_documento(self, formato):
         try:
             expediente = self.expediente_entry.get().strip()
             municipio_original = self.municipio_combo.get().strip()
@@ -367,31 +381,55 @@ class GeneradorOficiosApp(ctk.CTk):
                             
                     break
 
-            nombre_sugerido = f"Oficio - {municipio} - Expediente {expediente}.pdf"
+            # --- LÓGICA DE EXTENSIÓN SEGÚN EL BOTÓN PULSADO ---
+            ext = ".pdf" if formato == "pdf" else ".odt"
+            tipo_archivo = "Archivo PDF" if formato == "pdf" else "Archivo ODT"
             
-            ruta_pdf_final = filedialog.asksaveasfilename(
-                title="Guardar Oficio como...",
+            nombre_sugerido = f"Oficio - {municipio} - Expediente {expediente}{ext}"
+            
+            ruta_final = filedialog.asksaveasfilename(
+                title=f"Guardar como {formato.upper()}...",
                 initialdir=r"G:\Mi unidad", 
                 initialfile=nombre_sugerido,
-                defaultextension=".pdf",
-                filetypes=[("Archivo PDF", "*.pdf")]
+                defaultextension=ext,
+                filetypes=[(tipo_archivo, f"*{ext}")]
             )
 
-            if not ruta_pdf_final: return
-            ruta_word_temp = ruta_pdf_final.replace(".pdf", ".docx")
+            if not ruta_final: return
+            
+            # Siempre creamos el Word temporal primero
+            ruta_word_temp = ruta_final.replace(ext, ".docx")
             doc.save(ruta_word_temp)
             
+            # --- CONVERSIÓN ---
             try:
+                # Silenciamos la consola para el EXE
                 if sys.stdout is None: sys.stdout = open(os.devnull, "w")
                 if sys.stderr is None: sys.stderr = open(os.devnull, "w")
 
-                from docx2pdf import convert
-                convert(ruta_word_temp, ruta_pdf_final)
+                if formato == "pdf":
+                    from docx2pdf import convert
+                    convert(ruta_word_temp, ruta_final)
+                else:
+                    # MAGIA PARA ODT (Usando Word como puente)
+                    word = win32com.client.Dispatch("Word.Application")
+                    word.Visible = False
+                    
+                    # Importante: ruta absoluta para win32com
+                    abs_word_temp = os.path.abspath(ruta_word_temp)
+                    abs_odt_final = os.path.abspath(ruta_final)
+                    
+                    doc_word = word.Documents.Open(abs_word_temp)
+                    doc_word.SaveAs(abs_odt_final, FileFormat=23) # 23 es el código para ODT
+                    doc_word.Close()
+                    word.Quit()
+
+                # Borramos el temporal si todo ha ido bien
                 os.remove(ruta_word_temp) 
-                
-                messagebox.showinfo("¡Éxito Total!", "¡Documento guardado maravillosamente!")
-            except Exception as e_pdf:
-                messagebox.showwarning("Casi perfecto", f"Se generó el archivo Word, pero falló la conversión a PDF.\nSe ha guardado el Word en:\n{ruta_word_temp}\n\nError: {e_pdf}")
+                messagebox.showinfo("¡Éxito Total!", f"¡Documento {formato.upper()} guardado maravillosamente!")
+            
+            except Exception as e_conv:
+                messagebox.showwarning("Casi perfecto", f"Se generó el archivo Word, pero falló la conversión a {formato.upper()}.\nSe ha guardado el Word en:\n{ruta_word_temp}\n\nError: {e_conv}")
 
         except Exception as e:
             messagebox.showerror("Error", f"Ocurrió un error inesperado al generar: {e}")

@@ -22,25 +22,36 @@ class PDF(FPDF):
         super().__init__()
         self.tipo_examen = tipo_examen
         
+        self.set_left_margin(30)
+        self.set_right_margin(20)
+        
         self.add_font('Verdana', '', 'verdana.ttf', uni = True)
         self.add_font('Verdana', 'B', 'verdanab.ttf', uni = True)
 
     def header(self):
         try:
-            self.image('logo_dipu.png', 10, 8, 33) 
+            # 1. POSICIONAMOS EL LOGO CENTRADO
+            # X = 59.7 (para que quede en el centro exacto del folio)
+            # Y = 10 (margen superior)
+            # Ancho = 90.6 (tu medida de Word)
+            self.image('Imagen1.png', 30, 6, 65) 
         except:
             pass 
             
-        self.set_font('Verdana', 'B', 14) # Un pelín más pequeño para que no roce los bordes
-        self.set_x(45) 
-        self.cell(0, 10, 'EXAMEN DE CAPTACION - DIPUTACION DE CADIZ', 0, 1, 'C')
+        # 2. POSICIONAMOS EL MODELO JUSTO DEBAJO
+        # Si el logo empieza en Y=10 y mide aprox 30mm de alto, 
+        # bajamos el "lápiz" a Y=45 para que no se pisen.
+        self.set_y(28)
         
         if getattr(self, 'tipo_examen', ''):
-            self.set_x(45)
             self.set_font('Verdana', 'B', 12)
-            self.cell(0, 8, f'MODELO: {str(self.tipo_examen).upper()}', 0, 1, 'C')
+            # Usamos cell(0, ...) con align='C' para que se centre 
+            # automáticamente respecto a los márgenes de la página.
+            self.cell(0, 10, f'MODELO {str(self.tipo_examen).upper()}', 0, 1, 'C')
             
-        self.ln(5)
+        # 3. ESPACIO DE SEGURIDAD
+        # Dejamos un hueco antes de que empiecen las preguntas
+        self.ln(2)
         self.set_x(10) # ¡SEGURO ANTI-ERRORES! Forzamos el lápiz a la izquierda
 
     def footer(self):
@@ -94,36 +105,44 @@ def generar_examen_y_pdf(lista_preguntas, conv, ruta_destino, tipo_examen=""):
     # 2. CREACIÓN DEL PDF DEL EXAMEN
     pdf_examen = PDF(tipo_examen)
     pdf_examen.add_page()
+    
+    # --- NUEVO TÍTULO DE PREGUNTAS ---
+    pdf_examen.set_font("Verdana", 'BU', 12) # Negrita y un poco más grande
+    pdf_examen.cell(0, 10, 'PREGUNTAS', 0, 1, 'C') # Centrado
+    pdf_examen.ln(5) # Un pequeño salto de línea para respirar
+    # ---------------------------------
     pdf_examen.set_font("Verdana", size=11)
 
     # --- BUCLE 1: NORMALES ---
     for numero, pregunta in enumerate(preguntas_normales, start=1):
         
-        # 🟢 EL RADAR INTELIGENTE (Optimizado para Verdana 10.5) 🟢
-        texto_enun = f"{numero}. {pregunta['enunciado']}"
-        lineas_enun = (len(texto_enun) // 85) + 1 # Subimos a 85 caracteres
+        # 🟢 RADAR AJUSTADO A MARGEN 30 🟢
+        # Al tener más margen, caben menos letras: bajamos a 75 y 65 caracteres
+        texto_enun = f"{numero}.- {pregunta['enunciado']}"
+        lineas_enun = (len(texto_enun) // 70) + 1 
         altura_estimada = (lineas_enun * 8)
         
         for opcion in pregunta['opciones']:
-            lineas_op = (len(opcion['texto']) // 75) + 1 # Subimos a 75 caracteres
+            lineas_op = (len(opcion['texto']) // 60) + 1 
             altura_estimada += (lineas_op * 6)
             
-        altura_estimada += 12 # Espaciado extra de seguridad
+        altura_estimada += 18 
         
-        # Límite en 270mm (en lugar de 277) para evitar tocar el pie de página
-        if pdf_examen.get_y() + altura_estimada > 270:
+        if pdf_examen.get_y() + altura_estimada > 255:
             pdf_examen.add_page()
-        # ------------------------------------------------
 
-        pdf_examen.set_x(10) 
-        pdf_examen.multi_cell(0, 8, f"{numero}. {pregunta['enunciado']}")
+        pdf_examen.set_x(30) # Margen izquierdo 30
+        # CAMBIO: Formato 1.- 
+        pdf_examen.multi_cell(0, 8, f"{numero}.- {pregunta['enunciado']}")
         
         opciones = pregunta['opciones']
         random.shuffle(opciones)
         for indice, opcion in enumerate(opciones):
             letra = letras[indice]
-            pdf_examen.set_x(18) 
-            pdf_examen.multi_cell(0, 6, f"{letra}) {opcion['texto']}")
+            # Ponemos la respuesta con un pequeño sangrado respecto al 30 (ej: 38)
+            pdf_examen.set_x(38) 
+            # CAMBIO: Formato A. 
+            pdf_examen.multi_cell(0, 6, f"{letra}. {opcion['texto']}")
             if opcion['es_correcta']: plantilla_respuestas[numero] = letra
             
         pdf_examen.ln(4)
@@ -134,35 +153,33 @@ def generar_examen_y_pdf(lista_preguntas, conv, ruta_destino, tipo_examen=""):
         pdf_examen.set_font("Verdana", 'B', 12)
         pdf_examen.cell(0, 10, 'PREGUNTAS DE RESERVA', 0, 1, 'C')
         pdf_examen.ln(5)
-        pdf_examen.set_font("Verdana", size=11)
+        pdf_examen.set_font("Verdana", size=10.5)
 
         for numero, pregunta in enumerate(preguntas_reserva, start=1):
             
-            # 🟢 RADAR INTELIGENTE PARA RESERVAS 🟢
-            # 🟢 EL RADAR INTELIGENTE (Optimizado para Verdana 10.5) 🟢
-            texto_enun = f"{numero}. {pregunta['enunciado']}"
-            lineas_enun = (len(texto_enun) // 85) + 1 # Subimos a 85 caracteres
+            # Radar ajustado para reservas
+            texto_enun = f"{numero}.- {pregunta['enunciado']}"
+            lineas_enun = (len(texto_enun) // 75) + 1
             altura_estimada = (lineas_enun * 8)
-        
             for opcion in pregunta['opciones']:
-                lineas_op = (len(opcion['texto']) // 75) + 1 # Subimos a 75 caracteres
+                lineas_op = (len(opcion['texto']) // 65) + 1
                 altura_estimada += (lineas_op * 6)
-            
             altura_estimada += 12
             
             if pdf_examen.get_y() + altura_estimada > 270:
                 pdf_examen.add_page()
-            # ------------------------------------------------
 
-            pdf_examen.set_x(10)
-            pdf_examen.multi_cell(0, 8, f"{numero}. {pregunta['enunciado']}")
+            pdf_examen.set_x(30)
+            # CAMBIO: Formato 1.-
+            pdf_examen.multi_cell(0, 8, f"{numero}.- {pregunta['enunciado']}")
             
             opciones = pregunta['opciones']
             random.shuffle(opciones)
             for indice, opcion in enumerate(opciones):
                 letra = letras[indice]
-                pdf_examen.set_x(18) 
-                pdf_examen.multi_cell(0, 6, f"{letra}) {opcion['texto']}")
+                pdf_examen.set_x(38) 
+                # CAMBIO: Formato A.
+                pdf_examen.multi_cell(0, 6, f"{letra}. {opcion['texto']}")
                 if opcion['es_correcta']: plantilla_respuestas_reserva[numero] = letra
                 
             pdf_examen.ln(4)
@@ -262,7 +279,7 @@ ctk.set_default_color_theme("blue")
 class AppExamen(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Suite SAEL - Diputación de Cádiz")
+        self.title("Generador de Exámenes SAEL - Diputación de Cádiz")
         self.geometry("1000x750") # Ventana más ancha para el modo edición
         
         self.cliente = None

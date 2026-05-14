@@ -21,7 +21,7 @@ def conectar_google_sheets():
         "https://www.googleapis.com/auth/drive"
     ]
     creds = ServiceAccountCredentials.from_json_keyfile_name(
-        os.path.join(BASE_DIR, "credenciales.json"), scope
+        os.path.join(BASE_DIR, "examendiputacion-8399926aae15.json"), scope
     )
     client = gspread.authorize(creds)
     return client
@@ -36,7 +36,7 @@ if getattr(sys, 'frozen', False):
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-EXCEL_DATOS = os.path.join(BASE_DIR, "Datos_oficioremision.xlsx")
+EXCEL_DATOS = os.path.join(BASE_DIR, "Base_De_Datos.xlsx")
 WORD_PLANTILLA = os.path.join(BASE_DIR, "Plantilla_oficioremision.docx")
 
 # --- NUESTRO BUSCADOR FLOTANTE PRO (ADAPTADO A CUSTOMTKINTER) ---
@@ -170,6 +170,15 @@ class GeneradorOficiosApp(ctk.CTk):
         self.geometry("750x750")
 
         self.municipios, self.personas, self.cargos = self.cargar_datos_excel()
+        
+        # --- AÑADE ESTAS DOS LÍNEAS (Freno de emergencia) ---
+        if not self.municipios:
+            return  # Si la carga falla, cortamos aquí y no dibujamos el resto
+        # ----------------------------------------------------
+
+        # --- PANEL SUPERIOR ---
+        self.frame_superior = ctk.CTkFrame(self)
+        # ... (todo sigue igual hacia abajo)
 
         # --- PANEL SUPERIOR ---
         self.frame_superior = ctk.CTkFrame(self)
@@ -227,8 +236,9 @@ class GeneradorOficiosApp(ctk.CTk):
         try:
             client = conectar_google_sheets()
 
-            # Usa el nombre del documento o su URL
-            spreadsheet = client.open("Datos_oficioremision")
+            # --- TU ENLACE AQUÍ ---
+            URL_SHEET = "https://docs.google.com/spreadsheets/d/17TdFQMTpQnGwXEN5z4dUcyB2kLiG9to5l3AbUqJhGrs/edit?gid=0#gid=0"
+            spreadsheet = client.open_by_url(URL_SHEET)
 
             hoja_municipios = spreadsheet.worksheet("Municipios")
             hoja_personas = spreadsheet.worksheet("Personas")
@@ -246,8 +256,26 @@ class GeneradorOficiosApp(ctk.CTk):
 
             return municipios, personas, cargos
 
+        # --- EL DETECTOR DE MENTIRAS PARA LOS ERRORES ---
+        except gspread.exceptions.SpreadsheetNotFound:
+            messagebox.showerror("Error 1: Permisos", "El robot no encuentra el archivo.\n\n¿Estás seguro de que le diste a 'Compartir' en Google Sheets y añadiste el correo largo de tu credenciales.json?")
+            self.destroy()
+            return [], [], []
+            
+        except gspread.exceptions.WorksheetNotFound as e:
+            messagebox.showerror("Error 2: Pestañas", f"El archivo cargó bien, pero Google no encuentra esta pestaña abajo:\n\n{e}\n\nRevisa que se llamen exactamente 'Municipios', 'Personas' y 'Cargos'.")
+            self.destroy()
+            return [], [], []
+            
+        except gspread.exceptions.APIError as e:
+            messagebox.showerror("Error 3: API de Google", f"Google Cloud está bloqueando el acceso. ¿Tienes habilitada la Google Sheets API en la consola?\n\nDetalle técnico: {repr(e)}")
+            self.destroy()
+            return [], [], []
+            
         except Exception as e:
-            messagebox.showerror("Error Critico", f"No se pudo leer Google Sheets: {e}")
+            import traceback
+            error_detallado = traceback.format_exc()
+            messagebox.showerror("Error de Windows", f"Windows ha bloqueado el acceso a un archivo:\n\n{error_detallado}")
             self.destroy()
             return [], [], []
 
@@ -436,4 +464,5 @@ class GeneradorOficiosApp(ctk.CTk):
 
 if __name__ == "__main__":
     app = GeneradorOficiosApp()
-    app.mainloop()
+    if app.winfo_exists():
+        app.mainloop()

@@ -314,6 +314,8 @@ class GeneradorOficiosApp(ctk.CTk):
 
             if str(tipo_entidad).strip().lower() == "municipio":
                 municipio_texto_final = f"AYUNTAMIENTO DE {municipio}"
+            elif tipo_entidad == "ELA":
+                municipio_texto_final = f"ENTIDAD LOCAL AUTÓNOMA DE {municipio}"
             else:
                 municipio_texto_final = municipio
 

@@ -11,9 +11,13 @@ import customtkinter as ctk
 from tkinter import messagebox, filedialog
 import re
 
-
 # --- CONFIGURACIÓN DE LA NUBE ---
 NOMBRE_EXCEL_NUBE = "Banco de Preguntas SAEL (Definitivo) (respuestas)"
+
+
+
+
+
 
 # ==========================================
 # 1. FUNCIONES DE GENERACIÓN DE PDF (Sin cambios)
@@ -23,58 +27,48 @@ class PDF(FPDF):
         super().__init__()
         self.tipo_examen = tipo_examen
         
+        # Márgenes oficiales
         self.set_left_margin(30)
         self.set_right_margin(20)
         
-        self.add_font('Verdana', '', 'verdana.ttf', uni = True)
-        self.add_font('Verdana', 'B', 'verdanab.ttf', uni = True)
+        # Rutas simples y directas (Asegúrate de no poner uni=True)
+        self.add_font('Verdana', '', 'verdana.ttf',  uni = True)
+        self.add_font('Verdana', 'B', 'verdanab.ttf',  uni = True)
 
     def header(self):
+        # Si es la página 1 (Portada), nos saltamos el header
+        if self.page_no() == 1:
+            return
+            
         try:
-            # 1. POSICIONAMOS EL LOGO CENTRADO
-            # X = 59.7 (para que quede en el centro exacto del folio)
-            # Y = 10 (margen superior)
-            # Ancho = 90.6 (tu medida de Word)
-            self.image('Imagen1.png', 30, 6, 65) 
+            # Ruta simple para el logo
+            self.image('Imagen1.png', 59.7, 10, 90.6) 
         except:
             pass 
             
-        # 2. POSICIONAMOS EL MODELO JUSTO DEBAJO
-        # Si el logo empieza en Y=10 y mide aprox 30mm de alto, 
-        # bajamos el "lápiz" a Y=45 para que no se pisen.
-        self.set_y(28)
+        self.set_y(45)
         
         if getattr(self, 'tipo_examen', ''):
             self.set_font('Verdana', 'B', 12)
-            
-            # 1. Apagamos los márgenes
-            self.set_left_margin(0)
-            self.set_right_margin(0)
-            
-            # 2. Nos pegamos al borde izquierdo absoluto
             self.set_x(0)
+            self.cell(self.w, 10, f'MODELO: {str(self.tipo_examen).upper()}', 0, 1, 'C')
             
-            # 3. Usamos el ancho total del folio (210)
-            self.cell(210, 10, f'MODELO {str(self.tipo_examen).upper()}', 0, 1, 'C')
-            
-            # 4. Volvemos a encender los márgenes oficiales
-            self.set_left_margin(30)
-            self.set_right_margin(20)
-            
-        # 3. ESPACIO DE SEGURIDAD
-        # Dejamos un hueco antes de que empiecen las preguntas
-        self.ln(2)
-        self.set_x(10) # ¡SEGURO ANTI-ERRORES! Forzamos el lápiz a la izquierda
+        self.ln(5)
 
     def footer(self):
+        # Tampoco ponemos número de página en la portada
+        if self.page_no() == 1:
+            return
+            
         self.set_y(-15)
         self.set_font('Verdana', '', 8) 
-        # texto_pagina = 'Página ' + str(self.page_no()) + '/{nb}'
-        # self.cell(0, 10, texto_pagina, 0, 0, 'C')
+        # Restamos 1 para que el examen en sí empiece siendo la página 1
+        texto_pagina = 'Página ' + str(self.page_no() - 1) + '/{nb}'
+        self.cell(0, 10, texto_pagina, 0, 0, 'C')
         
         
         
-def generar_examen_y_pdf(lista_preguntas, conv, ruta_destino, tipo_examen=""):
+def generar_examen_y_pdf(lista_preguntas, conv, ruta_destino, tipo_examen="", datos={}):
     preguntas_normales = []
     preguntas_reserva = []
 
@@ -118,22 +112,57 @@ def generar_examen_y_pdf(lista_preguntas, conv, ruta_destino, tipo_examen=""):
     pdf_examen = PDF(tipo_examen)
     pdf_examen.add_page()
     
-# --- TÍTULO DE PREGUNTAS (Opción Nuclear) ---
-    pdf_examen.set_font("Verdana", 'BU', 12)
+    try:
+        # Ponemos el logo un poco más grande y centrado para la portada
+        pdf_examen.image('Imagen1.png', 30, 6, 65)
+    except:
+        pass
+        
+    pdf_examen.ln(70) # Bajamos el lápiz debajo del logo
     
-    # Apagamos los márgenes
-    pdf_examen.set_left_margin(0)
-    pdf_examen.set_right_margin(0)
-    pdf_examen.set_x(0)
+    # Títulos Principales
+    pdf_examen.set_font("Verdana", 'B', 16)
+    pdf_examen.cell(0, 10, 'EXAMEN DE CAPTACIÓN', 0, 1, 'C')
     
-    # Imprimimos usando el ancho total del folio (210)
-    pdf_examen.cell(210, 10, 'PREGUNTAS', 0, 1, 'C')
+    pdf_examen.set_font("Verdana", 'B', 14)
+    # Extraemos los datos que rellenó el usuario
+    oficio = datos.get('oficio', '').upper()
+    pdf_examen.cell(0, 10, f"PUESTO: {oficio}", 0, 1, 'C')
+    pdf_examen.cell(0, 10, f"CONVOCATORIA: {conv}", 0, 1, 'C')
     
-    # Restauramos márgenes para que los enunciados no se rompan
-    pdf_examen.set_left_margin(30)
-    pdf_examen.set_right_margin(20)
+    pdf_examen.ln(15)
     
-    pdf_examen.ln(5)
+    # Cuadro de Instrucciones (¡Con soporte Markdown!)
+    pdf_examen.set_font("Verdana", 'B', 12)
+    pdf_examen.cell(0, 10, 'INSTRUCCIONES:', 0, 1, 'L')
+    
+    pdf_examen.set_font("Verdana", '', 11)
+    instrucciones_texto = datos.get('instrucciones', '')
+    # Al poner markdown=True, si escribes **texto** en la app, lo pondrá en negrita
+    pdf_examen.multi_cell(0, 6, instrucciones_texto, markdown=True)
+    
+    pdf_examen.ln(20)
+    
+    # Cuadro para los datos del opositor (Para que lo rellenen a boli)
+    pdf_examen.set_font("Verdana", 'B', 11)
+    pdf_examen.cell(0, 8, 'DATOS DEL ASPIRANTE (Rellenar en mayúsculas):', 0, 1, 'L')
+    pdf_examen.set_font("Verdana", '', 11)
+    pdf_examen.cell(0, 10, 'DNI / NIE: .................................................................', 0, 1, 'L')
+    pdf_examen.cell(0, 10, 'APELLIDOS: .................................................................................................', 0, 1, 'L')
+    pdf_examen.cell(0, 10, 'NOMBRE: ....................................................................', 0, 1, 'L')
+    pdf_examen.cell(0, 10, 'FIRMA:', 0, 1, 'L')
+    
+    # ==========================================
+    #         FIN DEL DISEÑO DE PORTADA
+    # ==========================================
+
+    pdf_examen.add_page() # ESTA ES LA PÁGINA 2 (Empieza el examen con su header y footer normal)
+    
+    # --- NUEVO TÍTULO DE PREGUNTAS ---
+    pdf_examen.set_font("Verdana", 'BU', 12) # Negrita y un poco más grande
+    pdf_examen.cell(0, 10, 'PREGUNTAS', 0, 1, 'C') # Centrado
+    pdf_examen.ln(5) # Un pequeño salto de línea para respirar
+    # ---------------------------------
     pdf_examen.set_font("Verdana", size=11)
 
     # --- BUCLE 1: NORMALES ---
@@ -172,19 +201,9 @@ def generar_examen_y_pdf(lista_preguntas, conv, ruta_destino, tipo_examen=""):
 
     # --- BUCLE 2: RESERVAS ---
     if preguntas_reserva:
-        # --- TÍTULO DE RESERVA (Opción Nuclear) ---
         pdf_examen.add_page()
-        pdf_examen.set_font("Verdana", 'BU', 12)
-        
-        pdf_examen.set_left_margin(0)
-        pdf_examen.set_right_margin(0)
-        pdf_examen.set_x(0)
-        
-        pdf_examen.cell(210, 10, 'PREGUNTAS DE RESERVA', 0, 1, 'C')
-        
-        pdf_examen.set_left_margin(30)
-        pdf_examen.set_right_margin(20)
-        
+        pdf_examen.set_font("Verdana", 'B', 12)
+        pdf_examen.cell(0, 10, 'PREGUNTAS DE RESERVA', 0, 1, 'C')
         pdf_examen.ln(5)
         pdf_examen.set_font("Verdana", size=10.5)
 
@@ -607,32 +626,12 @@ class AppExamen(ctk.CTk):
         # ---------------------------------------------
 
         try:
-            # 2. Generamos la portada temporal
-            generar_portada_desde_word(datos)
-            
-            # 3. ¡LA LLAMADA CLAVE! Le pasamos el orden correcto: lista, conv, ruta_destino, tipo_examen
-            if generar_examen_y_pdf(df_filtrado.to_dict('records'), conv, ruta_destino, tipo_examen):
-                
-                # 4. Preparamos el Examen Final
-                sufijo = f"_Tipo_{tipo_examen}" if tipo_examen else ""
-                nombre_final = f"Examen_{conv}_modelo-{datos['tipo_examen']}.pdf"
-                
-                # Unimos la ruta elegida con el nombre del archivo final
-                ruta_examen_final = os.path.join(ruta_destino, nombre_final)
-                
-                # Fusionamos la portada y el examen directamente en la ruta final
-                fusionar_pdfs("portada_final.pdf", "Examen_Oficial.pdf", ruta_examen_final)
-                
-                messagebox.showinfo("Éxito", f"¡Archivos generados correctamente en:\n{ruta_destino}")
-                
-                # 5. Limpiamos la basura temporal
-                try: os.remove("portada_final.pdf")
-                except: pass
-                try: os.remove("Examen_Oficial.pdf")
-                except: pass
+            # Ya NO generamos portada temporal. Se lo pasamos todo a la función principal
+            if generar_examen_y_pdf(df_filtrado.to_dict('records'), conv, ruta_destino, tipo_examen, datos):
+                messagebox.showinfo("Éxito", f"¡Examen y Plantilla generados correctamente en:\n{ruta_destino}")
                 
         except Exception as e:
-            messagebox.showerror("Error", str(e))
+            messagebox.showerror("Error", f"Error en la generación: {str(e)}")
             
     def eliminar_pregunta(self):
         if not self.pregunta_seleccionada:

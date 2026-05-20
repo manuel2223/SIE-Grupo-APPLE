@@ -15,13 +15,25 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
+# --- GESTIÓN DE RUTAS (INTELIGENTE PARA EL .EXE) ---
+if getattr(sys, 'frozen', False):
+    # Si ejecutamos el .exe: El JSON está dentro (oculto), el Word está fuera
+    RUTA_JSON = sys._MEIPASS
+    RUTA_WORD = os.path.dirname(sys.executable)
+else:
+    # Si ejecutamos el .py: Todo está en la misma carpeta normal
+    RUTA_JSON = os.path.dirname(os.path.abspath(__file__))
+    RUTA_WORD = os.path.dirname(os.path.abspath(__file__))
+    
+WORD_PLANTILLA = os.path.join(RUTA_WORD, "Plantilla_oficioremision.docx")
+
 def conectar_google_sheets():
     scope = [
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/drive"
     ]
     creds = ServiceAccountCredentials.from_json_keyfile_name(
-        os.path.join(BASE_DIR, "examendiputacion-8399926aae15.json"), scope
+        os.path.join(RUTA_JSON, "credencialesoficio.json"), scope
     )
     client = gspread.authorize(creds)
     return client

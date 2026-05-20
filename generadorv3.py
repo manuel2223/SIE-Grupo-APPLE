@@ -4,6 +4,7 @@ import os
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from fpdf import FPDF
+import fpdf.fpdf  # 🟢 AÑADE ESTO AQUÍ
 from docxtpl import DocxTemplate, RichText
 from docx2pdf import convert
 from pypdf import PdfWriter
@@ -27,6 +28,8 @@ def resource_path(relative_path):
     except Exception:
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
+
+os.chdir(resource_path(''))
 
     
 # --- CONFIGURACIÓN DE LA NUBE ---
@@ -359,6 +362,7 @@ def generar_portada_desde_word(datos_variables):
     doc.save("portada_temp.docx")
     convert("portada_temp.docx", "portada_final.pdf")
     os.remove("portada_temp.docx")
+
     return "portada_final.pdf"
 
 def fusionar_pdfs(ruta_portada, ruta_preguntas, nombre_final):
@@ -366,6 +370,8 @@ def fusionar_pdfs(ruta_portada, ruta_preguntas, nombre_final):
     for ruta in [ruta_portada, ruta_preguntas]:
         with open(ruta, "rb") as f: writer.append(f)
     with open(nombre_final, "wb") as f: writer.write(f)
+    
+
 
 # ==========================================
 # 2. INTERFAZ GRÁFICA (App Principal)
@@ -395,6 +401,16 @@ class AppExamen(ctk.CTk):
         ctk.CTkLabel(self.frame_top, text="Convocatoria activa:").pack(side="left", padx=(20, 5))
         self.combo_convocatoria = ctk.CTkComboBox(self.frame_top, values=["Conecta primero..."], state="disabled", width=250, command=self.al_cambiar_convocatoria)
         self.combo_convocatoria.pack(side="left", padx=5)
+        
+        # 🟢 NUEVO: Botón de borrar convocatoria (Alineado a la derecha, intocable)
+        self.btn_eliminar_conv = ctk.CTkButton(
+            self.frame_top,
+            text="🚨 BORRAR EXAMEN",
+            command=self.eliminar_convocatoria_entera,
+            fg_color="#8b0000",
+            hover_color="#c0392b"
+        )
+        self.btn_eliminar_conv.pack(side="right", padx=10)
 
         # --- SISTEMA DE PESTAÑAS ---
         self.tabview = ctk.CTkTabview(self)
@@ -405,6 +421,52 @@ class AppExamen(ctk.CTk):
 
         self.construir_tab_generar()
         self.construir_tab_editar()
+        
+    def eliminar_convocatoria_entera(self):
+        conv = self.combo_convocatoria.get()
+        
+        if not conv or conv == "Conecta primero...":
+            messagebox.showwarning("Aviso", "Selecciona una convocatoria en la parte superior primero.")
+            return
+
+        confirmar = messagebox.askyesno(
+            "¡PELIGRO DE BORRADO!",
+            f"¿Estás ABSOLUTAMENTE SEGURO de que quieres borrar TODA la convocatoria '{conv}'?\n\n"
+            "Esto eliminará la fila entera en Google Sheets y TODAS sus preguntas asociadas. NO se puede deshacer."
+        )
+
+        if not confirmar:
+            return
+
+        self.btn_eliminar_conv.configure(text="Borrando...", state="disabled")
+        self.update()
+
+        try:
+            # 1. Buscamos qué filas de Excel pertenecen a esta convocatoria
+            filas_a_borrar = []
+            for index, fila_dict in enumerate(self.datos_sheet):
+                if str(fila_dict.get('Código de la Convocatoria', '')) == conv:
+                    # El index 0 de los datos es la Fila 2 real del Excel
+                    filas_a_borrar.append(index + 2)
+
+            # 2. TRUCO VITAL: Ordenamos de mayor a menor (reverse)
+            # Hay que borrar desde abajo hacia arriba para que los números de fila no cambien
+            filas_a_borrar.sort(reverse=True)
+
+            # 3. Borramos las filas físicas del Google Sheets
+            for fila in filas_a_borrar:
+                self.hoja.delete_rows(fila)
+
+            messagebox.showinfo("Éxito", f"La convocatoria '{conv}' ha sido purgada de la base de datos.")
+
+            # 4. Forzamos una reconexión para que se limpie toda la interfaz y desaparezca del menú
+            self.conectar_nube()
+            
+            self.btn_eliminar_conv.configure(text="🚨 BORRAR EXAMEN", state="normal")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo borrar la convocatoria: {e}")
+            self.btn_eliminar_conv.configure(text="🚨 BORRAR EXAMEN ENTERO", state="normal")
 
     # --- PESTAÑA 1: GENERAR ---
     def construir_tab_generar(self):
@@ -493,6 +555,9 @@ class AppExamen(ctk.CTk):
             state="disabled"
         )
         self.btn_eliminar.pack(pady=5)
+        
+
+        
 
     # ==========================================
     # LÓGICA DE DATOS Y CONEXIÓN
@@ -688,6 +753,9 @@ class AppExamen(ctk.CTk):
                 fusionar_pdfs("portada_final.pdf", "Examen_Oficial.pdf", ruta_examen_final)
                 
                 messagebox.showinfo("Éxito", f"¡Archivos generados correctamente en:\n{ruta_destino}")
+                
+                import time
+                time.sleep(1) # Le damos 1 segundo de respiro a Windows para que suelte los archivos
                 
                 # 5. Limpiamos la basura temporal
                 try: os.remove("portada_final.pdf")

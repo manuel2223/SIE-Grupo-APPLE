@@ -78,33 +78,63 @@ def generar_examen_y_pdf(lista_preguntas, conv, ruta_destino, tipo_examen=""):
     preguntas_normales = []
     preguntas_reserva = []
 
-    # 1. EXTRACCIÓN DE DATOS
+# 1. EXTRACCIÓN DE DATOS
     for fila in lista_preguntas:
         for i in range(1, 21): 
             col_enunciado = f'Enunciado de la Pregunta {i}'
             col_enunciado_reserva = f'Enunciado de la Pregunta de Reserva {i}'
 
+            # --- PREGUNTAS NORMALES ---
             if col_enunciado in fila and fila[col_enunciado]:
                 enunciado = fila[col_enunciado]
                 correcta = fila.get(f'Opción CORRECTA (Pregunta {i})', '')
                 inc1 = fila.get(f'Opción Falsa 1 (Pregunta {i})', '')
                 inc2 = fila.get(f'Opción Falsa 2 (Pregunta {i}) - Opcional', '')
                 inc3 = fila.get(f'Opción Falsa 3 (Pregunta {i}) - Opcional', '')
+                
+                # 🟢 NUEVO: Buscador inteligente para la justificación normal 'i'
+                justificacion = ""
+                for k, v in fila.items():
+                    k_lower = str(k).lower()
+                    if "justificaci" in k_lower and str(i) in k_lower and "reserv" not in k_lower:
+                        justificacion = v
+                        break
+
                 opciones_mezclar = [{'texto': correcta, 'es_correcta': True}, {'texto': inc1, 'es_correcta': False}]
                 if inc2: opciones_mezclar.append({'texto': inc2, 'es_correcta': False})
                 if inc3: opciones_mezclar.append({'texto': inc3, 'es_correcta': False})
-                preguntas_normales.append({'enunciado': str(enunciado).replace('\n', ' '), 'opciones': opciones_mezclar})
+                    
+                preguntas_normales.append({
+                    'enunciado': str(enunciado).replace('\n', ' '), 
+                    'opciones': opciones_mezclar,
+                    'justificacion': justificacion # 🟢 Guardamos la justificación limpia
+                })
 
+            # --- PREGUNTAS DE RESERVA ---
             if col_enunciado_reserva in fila and fila[col_enunciado_reserva]:
                 enunciado_reserva = fila[col_enunciado_reserva]
                 correcta_reserva = fila.get(f'Opción CORRECTA (Pregunta de Reserva {i})', '')
                 inc4 = fila.get(f'Opción Falsa 1 (Pregunta de Reserva {i})', '')
                 inc5 = fila.get(f'Opción Falsa 2 (Pregunta de Reserva {i}) - Opcional', '')
                 inc6 = fila.get(f'Opción Falsa 3 (Pregunta de Reserva {i}) - Opcional', '')
+                
+                # 🟢 NUEVO: Buscador inteligente para la justificación de reserva 'i'
+                justificacion_reserva = ""
+                for k, v in fila.items():
+                    k_lower = str(k).lower()
+                    if "justificaci" in k_lower and str(i) in k_lower and "reserv" in k_lower:
+                        justificacion_reserva = v
+                        break
+
                 opciones_mezclar_reserva = [{'texto': correcta_reserva, 'es_correcta': True}, {'texto': inc4, 'es_correcta': False}]
                 if inc5: opciones_mezclar_reserva.append({'texto': inc5, 'es_correcta': False})
                 if inc6: opciones_mezclar_reserva.append({'texto': inc6, 'es_correcta': False})
-                preguntas_reserva.append({'enunciado': str(enunciado_reserva).replace('\n', ' '), 'opciones': opciones_mezclar_reserva})
+                    
+                preguntas_reserva.append({
+                    'enunciado': str(enunciado_reserva).replace('\n', ' '), 
+                    'opciones': opciones_mezclar_reserva,
+                    'justificacion': justificacion_reserva # 🟢 Guardamos la justificación limpia
+                })
 
     if not preguntas_normales: return False
 
@@ -166,7 +196,11 @@ def generar_examen_y_pdf(lista_preguntas, conv, ruta_destino, tipo_examen=""):
             pdf_examen.set_x(38) 
             # CAMBIO: Formato A. 
             pdf_examen.multi_cell(0, 6, f"{letra}. {opcion['texto']}")
-            if opcion['es_correcta']: plantilla_respuestas[numero] = letra
+            if opcion['es_correcta']: 
+                plantilla_respuestas[numero] = {
+                    'letra': letra,
+                    'justificacion': pregunta.get('justificacion', '') 
+                }
             
         pdf_examen.ln(4)
 
@@ -213,7 +247,11 @@ def generar_examen_y_pdf(lista_preguntas, conv, ruta_destino, tipo_examen=""):
                 pdf_examen.set_x(38) 
                 # CAMBIO: Formato A.
                 pdf_examen.multi_cell(0, 6, f"{letra}. {opcion['texto']}")
-                if opcion['es_correcta']: plantilla_respuestas_reserva[numero] = letra
+                if opcion['es_correcta']: 
+                    plantilla_respuestas_reserva[numero] = {
+                        'letra': letra,
+                        'justificacion': pregunta.get('justificacion', '') 
+                    }
                 
             pdf_examen.ln(4)
 
@@ -227,8 +265,13 @@ def generar_examen_y_pdf(lista_preguntas, conv, ruta_destino, tipo_examen=""):
     pdf_plantilla.ln(10)
     pdf_plantilla.set_font("Verdana", size=12)
     
-    for numero, letra in plantilla_respuestas.items():
-        pdf_plantilla.cell(0, 8, f"Pregunta {numero}  -------  Respuesta: {letra}", 0, 1)
+    for numero, respuestas in plantilla_respuestas.items():
+        letra = respuestas['letra']
+        justificacion = respuestas['justificacion']
+        if justificacion:
+            pdf_plantilla.multi_cell(0, 8, f"Pregunta {numero}  -------  Respuesta: {letra}\n   Justificación: {justificacion}")
+        else:
+            pdf_plantilla.cell(0, 8, f"Pregunta {numero}  -------  Respuesta: {letra}", 0, 1)
 
     if plantilla_respuestas_reserva:
         pdf_plantilla.add_page()
@@ -237,8 +280,13 @@ def generar_examen_y_pdf(lista_preguntas, conv, ruta_destino, tipo_examen=""):
         pdf_plantilla.ln(10)
         pdf_plantilla.set_font("Verdana", size=12)
         
-        for numero, letra in plantilla_respuestas_reserva.items():
-            pdf_plantilla.cell(0, 8, f"Pregunta de Reserva {numero}  -------  Respuesta: {letra}", 0, 1)
+        for numero, respuestas in plantilla_respuestas_reserva.items():
+            letra = respuestas['letra']
+            justificacion = respuestas['justificacion']
+            if justificacion:
+                pdf_plantilla.multi_cell(0, 8, f"Pregunta de Reserva {numero}  -------  Respuesta: {letra}\n   Justificación: {justificacion}")
+            else:
+                pdf_plantilla.cell(0, 8, f"Pregunta de Reserva {numero}  -------  Respuesta: {letra}", 0, 1)
 
     # Guardamos la plantilla directamente en la carpeta que eligió el jefe
     ruta_plantilla = os.path.join(ruta_destino, f"PlantillaCorreccion_{conv}_modelo-{tipo_examen}.pdf")

@@ -10,6 +10,26 @@ from pypdf import PdfWriter
 import customtkinter as ctk
 from tkinter import messagebox, filedialog
 import re
+import sys
+import os
+
+import sys
+import os
+
+# Escudo anti-errores para el modo --noconsole
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, 'w')
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, 'w')
+
+def resource_path(relative_path):
+    """ Obtiene la ruta absoluta para recursos dentro del .exe de PyInstaller """
+    try:
+        # PyInstaller crea una carpeta temporal en AppData\Local\Temp\_MEIxxxxxx
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 
 # --- CONFIGURACIÓN DE LA NUBE ---
@@ -26,8 +46,8 @@ class PDF(FPDF):
         self.set_left_margin(30)
         self.set_right_margin(20)
         
-        self.add_font('Verdana', '', 'verdana.ttf', uni = True)
-        self.add_font('Verdana', 'B', 'verdanab.ttf', uni = True)
+        self.add_font('Verdana', '', resource_path('verdana.ttf'), uni = True)
+        self.add_font('Verdana', 'B', resource_path('verdanab.ttf'), uni = True)
 
     def header(self):
         try:
@@ -35,7 +55,7 @@ class PDF(FPDF):
             # X = 59.7 (para que quede en el centro exacto del folio)
             # Y = 10 (margen superior)
             # Ancho = 90.6 (tu medida de Word)
-            self.image('Imagen1.png', 30, 6, 65) 
+            self.image(resource_path('Imagen1.png'), 30, 6, 65) 
         except:
             pass 
             
@@ -330,8 +350,7 @@ def procesar_texto_enriquecido(texto):
     return rt
 
 def generar_portada_desde_word(datos_variables):
-    doc = DocxTemplate("Plantilla_Portada.docx")
-    
+    doc = DocxTemplate(resource_path("Plantilla_Portada.docx"))    
     # --- INTERCEPTAMOS LAS INSTRUCCIONES ---
     # Si hay instrucciones, las pasamos por nuestro traductor antes de inyectarlas
     if "instrucciones" in datos_variables and datos_variables["instrucciones"].strip():
@@ -486,7 +505,7 @@ class AppExamen(ctk.CTk):
         self.update()
         try:
             scope = ["https://spreadsheets.google.com/feeds", 'https://www.googleapis.com/auth/drive']
-            creds = ServiceAccountCredentials.from_json_keyfile_name('credenciales.json', scope)
+            creds = ServiceAccountCredentials.from_json_keyfile_name(resource_path('credenciales.json'), scope)
             self.cliente = gspread.authorize(creds)
             self.hoja = self.cliente.open(NOMBRE_EXCEL_NUBE).sheet1
             

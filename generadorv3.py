@@ -502,7 +502,7 @@ class AppExamen(ctk.CTk):
         self.update()
         try:
             scope = ["https://spreadsheets.google.com/feeds", 'https://www.googleapis.com/auth/drive']
-            creds = ServiceAccountCredentials.from_json_keyfile_name(resource_path('credenciales.json'), scope)
+            creds = ServiceAccountCredentials.from_json_keyfile_name(resource_path('examenes.json'), scope)
             self.cliente = gspread.authorize(creds)
             self.hoja = self.cliente.open(NOMBRE_EXCEL_NUBE).sheet1
             

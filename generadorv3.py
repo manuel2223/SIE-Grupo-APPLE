@@ -13,9 +13,6 @@ import re
 import sys
 import os
 
-import sys
-import os
-
 # Escudo anti-errores para el modo --noconsole
 if sys.stdout is None:
     sys.stdout = open(os.devnull, 'w')
@@ -31,9 +28,9 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
-
+    
 # --- CONFIGURACIÓN DE LA NUBE ---
-NOMBRE_EXCEL_NUBE = "Banco de Preguntas SAEL (Definitivo) (respuestas)"
+NOMBRE_EXCEL_NUBE = "Banco de Preguntas Examenes SAEL (respuestas)"
 
 # ==========================================
 # 1. FUNCIONES DE GENERACIÓN DE PDF (Sin cambios)

@@ -92,7 +92,7 @@ def cargar_datos_nube():
 # --- DISEÑO DE LA INTERFAZ WEB ---
 st.set_page_config(page_title="Generador de Oficios Pro", page_icon="📄", layout="centered")
 
-st.title("📄 Generador de Oficios de Remisión")
+st.title("📄 Generador de Oficios")
 st.write("Rellena los datos para generar el documento oficial editable.")
 
 municipios, dicc_atributos, lista_personas, lista_cargos = cargar_datos_nube()
